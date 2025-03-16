@@ -52,6 +52,9 @@ def calculate_td_sequential(data):
             current_buy_setup = 0
             df.loc[df.index[i], "buy_setup"] = 0
 
+        if current_buy_setup == 9:
+            current_buy_setup = 0
+
     # Sell Setup (price closing HIGHER than the close 4 bars earlier)
     current_sell_setup = 0
     for i in range(4, len(df)):
@@ -69,6 +72,9 @@ def calculate_td_sequential(data):
             current_sell_setup = 0
             df.loc[df.index[i], "sell_setup"] = 0
 
+        if current_sell_setup == 9:
+            current_sell_setup = 0 
+
     # Buy Countdown (only starts after a completed buy setup)
     # The close must be less than or equal to the low two bars earlier
     in_buy_countdown = False
@@ -79,7 +85,6 @@ def calculate_td_sequential(data):
         # Check for a completed buy setup (9 consecutive lower closes)
         if df["buy_setup"].iloc[i] == 9 and not in_buy_countdown:
             in_buy_countdown = True
-            buy_countdown_count = 0
             buy_countdown_start_index = i + 1  # Start countdown from the next bar
 
         # If we're in a buy countdown, check conditions
@@ -92,6 +97,12 @@ def calculate_td_sequential(data):
                 # Reset after reaching 13
                 if buy_countdown_count == 13:
                     in_buy_countdown = False
+                    buy_countdown_count = 0
+
+                # Cancel the buy countdown if a new sell setup appears
+                if df["sell_setup"].iloc[i] == 9:
+                    in_buy_countdown = False
+                    buy_countdown_count = 0
 
     # Sell Countdown (only starts after a completed sell setup)
     # The close must be greater than or equal to the high two bars earlier
@@ -103,7 +114,6 @@ def calculate_td_sequential(data):
         # Check for a completed sell setup (9 consecutive higher closes)
         if df["sell_setup"].iloc[i] == 9 and not in_sell_countdown:
             in_sell_countdown = True
-            sell_countdown_count = 0
             sell_countdown_start_index = i + 1  # Start countdown from the next bar
 
         # If we're in a sell countdown, check conditions
@@ -116,6 +126,12 @@ def calculate_td_sequential(data):
                 # Reset after reaching 13
                 if sell_countdown_count == 13:
                     in_sell_countdown = False
+                    sell_countdown_count = 0
+
+                # Cancel the sell countdown if a new buy setup appears
+                if df["buy_setup"].iloc[i] == 9:
+                    in_sell_countdown = False
+                    sell_countdown_count = 0
 
     # Add summary columns
     df["td_setup_direction"] = "neutral"
@@ -129,14 +145,13 @@ def calculate_td_sequential(data):
     return df
 
 
-
 def plot_td_sequential(data):
     """Create a Plotly candlestick chart with TD Sequential indicators
 
-    Places setup numbers directly on candles and countdown numbers below candles
+    Places setup numbers above candles and countdown numbers below candles
     Highlights 9s in setups and 13s in countdowns
     """
-
+    
     fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
 
     # Add candlestick chart
@@ -151,19 +166,19 @@ def plot_td_sequential(data):
         )
     )
 
-    # Add buy setup numbers (green, on candles)
+    # Add buy setup numbers (green, above candles)
     buy_setup_data = data[data["buy_setup"] > 0].copy()
     if not buy_setup_data.empty:
         fig.add_trace(
             go.Scatter(
                 x=buy_setup_data.index,
-                y=(buy_setup_data["High"] + buy_setup_data["Low"])
-                / 2,  # Middle of candle
+                y=buy_setup_data["High"]
+                + (buy_setup_data["High"] * 0.001),  # Just above the high
                 mode="text",
                 text=buy_setup_data["buy_setup"].apply(
                     lambda x: f"<b>{x}</b>" if x == 9 else str(x)
                 ),
-                textposition="middle right",
+                textposition="top right",
                 textfont=dict(
                     color="green",
                     size=buy_setup_data["buy_setup"].apply(
@@ -175,19 +190,19 @@ def plot_td_sequential(data):
             )
         )
 
-    # Add sell setup numbers (red, on candles)
+    # Add sell setup numbers (red, above candles)
     sell_setup_data = data[data["sell_setup"] > 0].copy()
     if not sell_setup_data.empty:
         fig.add_trace(
             go.Scatter(
                 x=sell_setup_data.index,
-                y=(sell_setup_data["High"] + sell_setup_data["Low"])
-                / 2,  # Middle of candle
+                y=sell_setup_data["High"]
+                + (sell_setup_data["High"] * 0.001),  # Just above the high
                 mode="text",
                 text=sell_setup_data["sell_setup"].apply(
                     lambda x: f"<b>{x}</b>" if x == 9 else str(x)
                 ),
-                textposition="middle left",
+                textposition="top left",
                 textfont=dict(
                     color="red",
                     size=sell_setup_data["sell_setup"].apply(
@@ -205,7 +220,7 @@ def plot_td_sequential(data):
         fig.add_trace(
             go.Scatter(
                 x=buy_countdown_data.index,
-                # Further below the low for better visibility
+                # Below the low for visibility
                 y=buy_countdown_data["Low"] - (buy_countdown_data["Low"] * 0.004),
                 mode="text",
                 text=buy_countdown_data["buy_countdown"].apply(
