@@ -3,8 +3,8 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-from calculate_td_sequential import calculate_td_sequential
-from plot_td_sequential import plot_td_sequential
+from calculate_tds import calculate_td_sequential
+from plot_tds import plot_td_sequential
 
 # Define functions first, before the Streamlit interface code
 

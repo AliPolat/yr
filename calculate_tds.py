@@ -15,12 +15,30 @@ def calculate_td_sequential(data, ticker="AAPL"):
     df["setup_support"] = None
     df["setup_resistance"] = None
 
+    # Add columns for support/resistance cancel points
+    df["setup_support_cancel"] = None
+    df["setup_resistance_cancel"] = None
+    df["support_canceled"] = False
+    df["resistance_canceled"] = False
+
     # For readability, we'll use separate methods for buy and sell scenarios
 
     # Buy Setup (price closing LOWER than the close 4 bars earlier)
     current_buy_setup = 0
     buy_setup_start_idx = None
+    active_support_level = None
+    active_support_date = None
+
     for i in range(4, len(df)):
+        # Check if active support is broken
+        if active_support_level is not None:
+            if df["Close"].iloc[i] > active_support_level:
+                # Support is canceled when price closes above support level
+                df.loc[df.index[i], "support_canceled"] = True
+                df.loc[df.index[i], "setup_support_cancel"] = active_support_level
+                active_support_level = None
+                active_support_date = None
+
         if df["Close"].iloc[i] < df["Close"].iloc[i - 4]:  # Buy setup condition
             if current_buy_setup == 0:
                 buy_setup_start_idx = i
@@ -35,13 +53,15 @@ def calculate_td_sequential(data, ticker="AAPL"):
                 ):
                     df.loc[df.index[i], "buy_setup_perfected"] = True
 
-                # Calculate setup support level (higest high of the 9-bar setup)
+                # Calculate setup support level (highest high of the 9-bar setup)
                 if buy_setup_start_idx is not None:
                     setup_range = df.iloc[buy_setup_start_idx : i + 1]
-                    setup_support = setup_range[
-                        "High"
-                    ].max()  # setup_range["Low"].min()
+                    setup_support = setup_range["High"].max()
                     df.loc[df.index[i], "setup_support"] = setup_support
+
+                    # Set the active support level and date
+                    active_support_level = setup_support
+                    active_support_date = df.index[i]
 
         else:
             current_buy_setup = 0
@@ -55,7 +75,19 @@ def calculate_td_sequential(data, ticker="AAPL"):
     # Sell Setup (price closing HIGHER than the close 4 bars earlier)
     current_sell_setup = 0
     sell_setup_start_idx = None
+    active_resistance_level = None
+    active_resistance_date = None
+
     for i in range(4, len(df)):
+        # Check if active resistance is broken
+        if active_resistance_level is not None:
+            if df["Close"].iloc[i] < active_resistance_level:
+                # Resistance is canceled when price closes below resistance level
+                df.loc[df.index[i], "resistance_canceled"] = True
+                df.loc[df.index[i], "setup_resistance_cancel"] = active_resistance_level
+                active_resistance_level = None
+                active_resistance_date = None
+
         if df["Close"].iloc[i] > df["Close"].iloc[i - 4]:  # Sell setup condition
             if current_sell_setup == 0:
                 sell_setup_start_idx = i
@@ -75,6 +107,10 @@ def calculate_td_sequential(data, ticker="AAPL"):
                     setup_range = df.iloc[sell_setup_start_idx : i + 1]
                     setup_resistance = setup_range["Low"].min()
                     df.loc[df.index[i], "setup_resistance"] = setup_resistance
+
+                    # Set the active resistance level and date
+                    active_resistance_level = setup_resistance
+                    active_resistance_date = df.index[i]
         else:
             current_sell_setup = 0
             df.loc[df.index[i], "sell_setup"] = 0
