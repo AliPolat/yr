@@ -1,12 +1,14 @@
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+
 def plot_td_sequential(data, ticker="AAPL"):
     """Create a Plotly candlestick chart with TD Sequential indicators
 
     Places setup numbers above candles and countdown numbers below candles
     Highlights 9s in setups and 13s in countdowns
     Displays setup support and resistance lines
+    Displays canceled support and resistance lines
     """
 
     fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
@@ -229,13 +231,28 @@ def plot_td_sequential(data, ticker="AAPL"):
     setup_support_data = data[data["setup_support"].notnull()].copy()
     if not setup_support_data.empty:
         for idx, row in setup_support_data.iterrows():
-            # Calculate how far to extend the support line (10 bars forward)
-            extension_length = 10
+            # Find the first cancellation point after this index, if any
+            cancellation_point = None
             current_index_position = data.index.get_loc(idx)
-            if current_index_position + extension_length < len(data.index):
-                end_idx = data.index[current_index_position + extension_length]
+
+            # Look for a cancellation point in the future
+            future_data = data.iloc[current_index_position:]
+            future_canceled_points = future_data[
+                future_data["support_canceled"] == True
+            ].index
+
+            if len(future_canceled_points) > 0:
+                cancellation_point = future_canceled_points[0]
+                end_idx = cancellation_point
             else:
+                # If no cancellation point, extend to the end of the data
                 end_idx = data.index[-1]
+
+            # Check if this support line is canceled
+            is_canceled = row.get("support_canceled", False)
+            line_style = "dot" if is_canceled else "dash"
+            line_color = "rgba(0, 128, 0, 0.4)" if is_canceled else "green"
+            annotation_text = "Support (Canceled)" if is_canceled else "Support"
 
             # Draw the support line
             fig.add_shape(
@@ -245,19 +262,18 @@ def plot_td_sequential(data, ticker="AAPL"):
                 x1=end_idx,
                 y1=row["setup_support"],
                 line=dict(
-                    color="green",
+                    color=line_color,
                     width=1.5,
-                    dash="dash",
+                    dash=line_style,
                 ),
                 opacity=0.7,
             )
 
             # Add annotation for setup support
-
             fig.add_annotation(
                 x=idx,
                 y=row["setup_support"],
-                text="Support",
+                text=annotation_text,
                 showarrow=True,
                 arrowhead=1,
                 ax=40,
@@ -273,13 +289,28 @@ def plot_td_sequential(data, ticker="AAPL"):
     setup_resistance_data = data[data["setup_resistance"].notnull()].copy()
     if not setup_resistance_data.empty:
         for idx, row in setup_resistance_data.iterrows():
-            # Calculate how far to extend the resistance line (10 bars forward)
-            extension_length = 10
+            # Find the first cancellation point after this index, if any
+            cancellation_point = None
             current_index_position = data.index.get_loc(idx)
-            if current_index_position + extension_length < len(data.index):
-                end_idx = data.index[current_index_position + extension_length]
+
+            # Look for a cancellation point in the future
+            future_data = data.iloc[current_index_position:]
+            future_canceled_points = future_data[
+                future_data["resistance_canceled"] == True
+            ].index
+
+            if len(future_canceled_points) > 0:
+                cancellation_point = future_canceled_points[0]
+                end_idx = cancellation_point
             else:
+                # If no cancellation point, extend to the end of the data
                 end_idx = data.index[-1]
+
+            # Check if this resistance line is canceled
+            is_canceled = row.get("resistance_canceled", False)
+            line_style = "dot" if is_canceled else "dash"
+            line_color = "rgba(255, 0, 0, 0.4)" if is_canceled else "red"
+            annotation_text = "Resistance (Canceled)" if is_canceled else "Resistance"
 
             # Draw the resistance line
             fig.add_shape(
@@ -289,9 +320,9 @@ def plot_td_sequential(data, ticker="AAPL"):
                 x1=end_idx,
                 y1=row["setup_resistance"],
                 line=dict(
-                    color="red",
+                    color=line_color,
                     width=1.5,
-                    dash="dash",
+                    dash=line_style,
                 ),
                 opacity=0.7,
             )
@@ -300,7 +331,7 @@ def plot_td_sequential(data, ticker="AAPL"):
             fig.add_annotation(
                 x=idx,
                 y=row["setup_resistance"],
-                text="Resistance",
+                text=annotation_text,
                 showarrow=True,
                 arrowhead=1,
                 ax=-40,
@@ -311,6 +342,147 @@ def plot_td_sequential(data, ticker="AAPL"):
                 borderwidth=1,
                 borderpad=4,
             )
+
+    # Add canceled support lines
+    setup_support_cancel_data = data[data["setup_support_cancel"].notnull()].copy()
+    if not setup_support_cancel_data.empty:
+        for idx, row in setup_support_cancel_data.iterrows():
+            # Calculate how far to extend the canceled support line
+            extension_length = 5
+            current_index_position = data.index.get_loc(idx)
+            if current_index_position + extension_length < len(data.index):
+                end_idx = data.index[current_index_position + extension_length]
+            else:
+                end_idx = data.index[-1]
+
+            # Draw the canceled support line
+            fig.add_shape(
+                type="line",
+                x0=idx,
+                y0=row["setup_support_cancel"],
+                x1=end_idx,
+                y1=row["setup_support_cancel"],
+                line=dict(
+                    color="rgba(0, 128, 0, 0.3)",
+                    width=1,
+                    dash="dot",
+                ),
+                opacity=0.5,
+            )
+
+            # Add annotation for canceled support
+            fig.add_annotation(
+                x=idx,
+                y=row["setup_support_cancel"],
+                text="Support Canceled",
+                showarrow=True,
+                arrowhead=1,
+                ax=30,
+                ay=15,
+                font=dict(color="green", size=8),
+                bgcolor="rgba(255, 255, 255, 0.5)",
+                bordercolor="green",
+                borderwidth=1,
+                borderpad=3,
+            )
+
+    # Add canceled resistance lines
+    setup_resistance_cancel_data = data[
+        data["setup_resistance_cancel"].notnull()
+    ].copy()
+    if not setup_resistance_cancel_data.empty:
+        for idx, row in setup_resistance_cancel_data.iterrows():
+            # Calculate how far to extend the canceled resistance line
+            extension_length = 5
+            current_index_position = data.index.get_loc(idx)
+            if current_index_position + extension_length < len(data.index):
+                end_idx = data.index[current_index_position + extension_length]
+            else:
+                end_idx = data.index[-1]
+
+            # Draw the canceled resistance line
+            fig.add_shape(
+                type="line",
+                x0=idx,
+                y0=row["setup_resistance_cancel"],
+                x1=end_idx,
+                y1=row["setup_resistance_cancel"],
+                line=dict(
+                    color="rgba(255, 0, 0, 0.3)",
+                    width=1,
+                    dash="dot",
+                ),
+                opacity=0.5,
+            )
+
+            # Add annotation for canceled resistance
+            fig.add_annotation(
+                x=idx,
+                y=row["setup_resistance_cancel"],
+                text="Resistance Canceled",
+                showarrow=True,
+                arrowhead=1,
+                ax=-30,
+                ay=-15,
+                font=dict(color="red", size=8),
+                bgcolor="rgba(255, 255, 255, 0.5)",
+                bordercolor="red",
+                borderwidth=1,
+                borderpad=3,
+            )
+
+    # Add X markers for actual cancellation points of support/resistance
+    support_canceled_points = data[data["support_canceled"] == True].index
+    for date in support_canceled_points:
+        # Add X marker for support cancellation
+        fig.add_trace(
+            go.Scatter(
+                x=[date],
+                y=[data.loc[date, "Low"] * 0.98],
+                mode="markers",
+                marker=dict(
+                    symbol="x",
+                    size=10,
+                    color="green",
+                    line=dict(width=1, color="darkgreen"),
+                ),
+                name="Support Canceled",
+                legendgroup="Support Canceled",
+                showlegend=(
+                    date == support_canceled_points[0]
+                    if len(support_canceled_points) > 0
+                    else True
+                ),
+                hoverinfo="text",
+                hovertext=f"Support Canceled on {date.strftime('%Y-%m-%d')}",
+            )
+        )
+
+    resistance_canceled_points = data[data["resistance_canceled"] == True].index
+    for date in resistance_canceled_points:
+        # Add X marker for resistance cancellation
+        fig.add_trace(
+            go.Scatter(
+                x=[date],
+                y=[data.loc[date, "High"] * 1.02],
+                mode="markers",
+                marker=dict(
+                    symbol="x",
+                    size=10,
+                    color="red",
+                    line=dict(width=1, color="darkred"),
+                ),
+                name="Resistance Canceled",
+                legendgroup="Resistance Canceled",
+                showlegend=(
+                    date == resistance_canceled_points[0]
+                    if len(resistance_canceled_points) > 0
+                    else True
+                ),
+                hoverinfo="text",
+                hovertext=f"Resistance Canceled on {date.strftime('%Y-%m-%d')}",
+            )
+        )
 
     # Update layout
     fig.update_layout(
