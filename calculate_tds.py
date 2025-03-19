@@ -32,10 +32,7 @@ def calculate_td_sequential(data, ticker="AAPL"):
     for i in range(4, len(df)):
         # Check if active support is broken
         if active_support_level is not None:
-            if (
-                df["Close"].iloc[i] > active_support_level
-                or df["buy_setup"].iloc[i] == 9
-            ):
+            if df["Close"].iloc[i] > active_support_level:
                 # Support is canceled when price closes above support level
                 df.loc[df.index[i], "support_canceled"] = True
                 df.loc[df.index[i], "setup_support_cancel"] = active_support_level
@@ -84,10 +81,7 @@ def calculate_td_sequential(data, ticker="AAPL"):
     for i in range(4, len(df)):
         # Check if active resistance is broken
         if active_resistance_level is not None:
-            if (
-                df["Close"].iloc[i] < active_resistance_level
-                or df["sell_setup"].iloc[i] == 9
-            ):
+            if df["Close"].iloc[i] < active_resistance_level:
                 # Resistance is canceled when price closes below resistance level
                 df.loc[df.index[i], "resistance_canceled"] = True
                 df.loc[df.index[i], "setup_resistance_cancel"] = active_resistance_level

@@ -101,11 +101,16 @@ if st.sidebar.button("Download Data"):
             "buy_countdown",
             "sell_countdown",
             "setup_support",
+            "setup_support_cancel",
+            "support_canceled",
             "setup_resistance",
+            "setup_resistance_cancel",
+            "resistance_canceled",
             "buy_setup_perfected",
             "sell_setup_perfected",
             "td_setup_direction",
             "td_countdown_direction",
         ]
-        #st.dataframe(td_data[display_cols])
-        st.dataframe(td_data)
+        
+        st.dataframe(td_data[display_cols])
+        #st.dataframe(td_data)
