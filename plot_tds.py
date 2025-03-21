@@ -1,499 +1,303 @@
+import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 
-def plot_td_sequential(data, ticker="AAPL"):
-    """Create a Plotly candlestick chart with TD Sequential indicators
-
-    Places setup numbers above candles and countdown numbers below candles
-    Highlights 9s in setups and 13s in countdowns
-    Displays setup support and resistance lines
-    Displays canceled support and resistance lines
+def plot_tdsequential(df, stock_name=None, window=100):
     """
+    Plot TD Sequential indicators on a candlestick chart with improved readability and dark theme.
 
-    fig = make_subplots(rows=1, cols=1, shared_xaxes=True)
+    Shows all setup numbers (1-9) above candlesticks and all countdown numbers (1-13) below candlesticks,
+    with better spacing and visual hierarchy to improve readability.
+
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame with OHLC data and TD Sequential columns from calculate_tdsequential()
+    stock_name : str, optional
+        Name of the stock for the chart title
+    window : int, optional
+        Number of bars to display, default is 100
+
+    Returns:
+    --------
+    plotly.graph_objects.Figure
+        Plotly figure object
+    """
+    # Make a copy and limit to the window size
+    if len(df) > window:
+        plot_df = df.iloc[-window:].copy()
+    else:
+        plot_df = df.copy()
+
+    # Get date column or index for x-axis
+    if isinstance(plot_df.index, pd.DatetimeIndex):
+        x = plot_df.index
+    elif "date" in plot_df.columns:
+        x = plot_df["date"]
+    else:
+        x = np.arange(len(plot_df))
+
+    # Create a single subplot with more vertical space
+    fig = make_subplots(rows=1, cols=1, vertical_spacing=0.02)
 
     # Add candlestick chart
-    fig.add_trace(
-        go.Candlestick(
-            x=data.index,
-            open=data["Open"],
-            high=data["High"],
-            low=data["Low"],
-            close=data["Close"],
-            name="Price",
-        )
+    candlestick = go.Candlestick(
+        x=x,
+        open=plot_df["open"],
+        high=plot_df["high"],
+        low=plot_df["low"],
+        close=plot_df["close"],
+        name="Price",
+        showlegend=False,
+        increasing=dict(line=dict(width=1.5), fillcolor="rgba(0,168,107,0.6)"),
+        decreasing=dict(line=dict(width=1.5), fillcolor="rgba(220,39,39,0.6)"),
+    )
+    fig.add_trace(candlestick)
+
+    # Calculate price range for annotation positioning
+    price_range = plot_df["high"].max() - plot_df["low"].min()
+
+    # Spacing for better readability
+    setup_offset = price_range * 0.02
+    countdown_offset = price_range * 0.02
+    signal_offset = price_range * 0.05
+
+    # Dictionary to track position conflicts (avoid overlapping annotations)
+    annotation_positions = {}
+
+    # Function to handle potential annotation overlaps
+    def get_adjusted_position(idx, y_position, is_above):
+        key = (idx, is_above)
+        if key in annotation_positions:
+            # If this position is already taken, adjust by a small amount
+            if is_above:
+                y_position += setup_offset
+            else:
+                y_position -= countdown_offset
+            annotation_positions[key] = y_position
+        else:
+            annotation_positions[key] = y_position
+        return y_position
+
+    # Add Buy Setup annotations (above candlesticks)
+    for i, row in plot_df.iterrows():
+        idx = i if not isinstance(x, pd.DatetimeIndex) else i
+
+        # Show all setup numbers
+        if row["buy_setup"] > 0:
+            y_pos = get_adjusted_position(idx, row["high"] + setup_offset, True)
+            # Make higher numbers more prominent
+            font_size = 10 + min(2, row["buy_setup"] - 1)
+            fig.add_annotation(
+                x=idx,
+                y=y_pos,
+                text=str(int(row["buy_setup"])),
+                showarrow=False,
+                font=dict(color="rgb(0,168,107)", size=font_size, family="Arial"),
+                # Removed bgcolor, bordercolor, and borderwidth to remove box
+                opacity=0.9,
+            )
+
+        # Highlight perfect buy setup 9s
+        if row["buy_setup"] == 9 and row.get("perfect_buy_9", 0) == 1:
+            fig.add_annotation(
+                x=idx,
+                y=row["high"] + signal_offset,
+                text="BUY 9",
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1,
+                arrowwidth=2,
+                arrowcolor="rgb(0,168,107)",
+                font=dict(color="white", size=12, family="Arial Black"),
+                bgcolor="rgb(0,168,107)",
+                borderpad=4,
+                borderwidth=0,
+                opacity=0.9,
+            )
+
+    # Add Sell Setup annotations (above candlesticks)
+    for i, row in plot_df.iterrows():
+        idx = i if not isinstance(x, pd.DatetimeIndex) else i
+
+        # Show all setup numbers
+        if row["sell_setup"] > 0:
+            y_pos = get_adjusted_position(idx, row["high"] + setup_offset, True)
+            # Make higher numbers more prominent
+            font_size = 10 + min(2, row["sell_setup"] - 1)
+            fig.add_annotation(
+                x=idx,
+                y=y_pos,
+                text=str(int(row["sell_setup"])),
+                showarrow=False,
+                font=dict(color="rgb(220,39,39)", size=font_size, family="Arial"),
+                # Removed bgcolor, bordercolor, and borderwidth to remove box
+                opacity=0.9,
+            )
+
+        # Highlight perfect sell setup 9s
+        if row["sell_setup"] == 9 and row.get("perfect_sell_9", 0) == 1:
+            fig.add_annotation(
+                x=idx,
+                y=row["high"] + signal_offset,
+                text="SELL 9",
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1,
+                arrowwidth=2,
+                arrowcolor="rgb(220,39,39)",
+                font=dict(color="white", size=12, family="Arial Black"),
+                bgcolor="rgb(220,39,39)",
+                borderpad=4,
+                borderwidth=0,
+                opacity=0.9,
+            )
+
+    # Add Buy Countdown annotations (below candlesticks)
+    for i, row in plot_df.iterrows():
+        idx = i if not isinstance(x, pd.DatetimeIndex) else i
+
+        # Show all countdown numbers
+        if row["buy_countdown"] > 0:
+            y_pos = get_adjusted_position(idx, row["low"] - countdown_offset, False)
+            # Make higher numbers more prominent
+            font_size = 10 + min(2, row["buy_countdown"] // 5)
+            fig.add_annotation(
+                x=idx,
+                y=y_pos,
+                text=str(int(row["buy_countdown"])),
+                showarrow=False,
+                font=dict(color="rgb(0,168,107)", size=font_size, family="Arial"),
+                # Removed bgcolor, bordercolor, and borderwidth to remove box
+                opacity=0.9,
+            )
+
+            # Highlight perfect buy countdown 13s
+            if row["buy_countdown"] == 13 and row.get("perfect_buy_13", 0) == 1:
+                fig.add_annotation(
+                    x=idx,
+                    y=row["low"] - signal_offset,
+                    text="BUY 13",
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1,
+                    arrowwidth=2,
+                    arrowcolor="rgb(0,168,107)",
+                    font=dict(color="white", size=12, family="Arial Black"),
+                    bgcolor="rgb(0,168,107)",
+                    borderpad=4,
+                    borderwidth=0,
+                    opacity=0.9,
+                )
+
+    # Add Sell Countdown annotations (below candlesticks)
+    for i, row in plot_df.iterrows():
+        idx = i if not isinstance(x, pd.DatetimeIndex) else i
+
+        # Show all countdown numbers
+        if row["sell_countdown"] > 0:
+            y_pos = get_adjusted_position(idx, row["low"] - countdown_offset, False)
+            # Make higher numbers more prominent
+            font_size = 10 + min(2, row["sell_countdown"] // 5)
+            fig.add_annotation(
+                x=idx,
+                y=y_pos,
+                text=str(int(row["sell_countdown"])),
+                showarrow=False,
+                font=dict(color="rgb(220,39,39)", size=font_size, family="Arial"),
+                # Removed bgcolor, bordercolor, and borderwidth to remove box
+                opacity=0.9,
+            )
+
+            # Highlight perfect sell countdown 13s
+            if row["sell_countdown"] == 13 and row.get("perfect_sell_13", 0) == 1:
+                fig.add_annotation(
+                    x=idx,
+                    y=row["low"] - signal_offset,
+                    text="SELL 13",
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1,
+                    arrowwidth=2,
+                    arrowcolor="rgb(220,39,39)",
+                    font=dict(color="white", size=12, family="Arial Black"),
+                    bgcolor="rgb(220,39,39)",
+                    borderpad=4,
+                    borderwidth=0,
+                    opacity=0.9,
+                )
+
+    # Create a clearer legend using shapes and annotations
+    fig.add_shape(
+        type="rect",
+        xref="paper",
+        yref="paper",
+        x0=0.01,
+        y0=0.01,
+        x1=0.3,
+        y1=0.12,
+        fillcolor="rgba(40,40,40,0.9)",  # Dark background for legend
+        line=dict(color="#555555", width=1),
+        layer="below",
     )
 
-    # Add buy setup numbers (green, above candles)
-    buy_setup_data = data[data["buy_setup"] > 0].copy()
-    if not buy_setup_data.empty:
-        fig.add_trace(
-            go.Scatter(
-                x=buy_setup_data.index,
-                y=buy_setup_data["High"]
-                + (buy_setup_data["High"] * 0.001),  # Just above the high
-                mode="text",
-                text=buy_setup_data["buy_setup"].apply(
-                    lambda x: f"<b>{x}</b>" if x == 9 else str(x)
-                ),
-                textposition="top right",
-                textfont=dict(
-                    color="green",
-                    size=buy_setup_data["buy_setup"].apply(
-                        lambda x: 14 if x == 9 else 10
-                    ),
-                ),
-                name="Buy Setup",
-                hoverinfo="none",
-            )
+    # Add clearer, color-coded legend text
+    legend_texts = [
+        ("BUY SETUP (1-9)", "rgb(0,168,107)", 0.025, 0.095),
+        ("SELL SETUP (1-9)", "rgb(220,39,39)", 0.025, 0.075),
+        ("BUY COUNTDOWN (1-13)", "rgb(0,168,107)", 0.025, 0.055),
+        ("SELL COUNTDOWN (1-13)", "rgb(220,39,39)", 0.025, 0.035),
+    ]
+
+    for text, color, x, y in legend_texts:
+        fig.add_annotation(
+            x=x,
+            y=y,
+            xref="paper",
+            yref="paper",
+            text=text,
+            showarrow=False,
+            font=dict(size=11, color=color, family="Arial"),
+            align="left",
+            bgcolor="rgba(0,0,0,0)",
         )
 
-    # Add sell setup numbers (red, above candles)
-    sell_setup_data = data[data["sell_setup"] > 0].copy()
-    if not sell_setup_data.empty:
-        fig.add_trace(
-            go.Scatter(
-                x=sell_setup_data.index,
-                y=sell_setup_data["High"]
-                + (sell_setup_data["High"] * 0.001),  # Just above the high
-                mode="text",
-                text=sell_setup_data["sell_setup"].apply(
-                    lambda x: f"<b>{x}</b>" if x == 9 else str(x)
-                ),
-                textposition="top left",
-                textfont=dict(
-                    color="red",
-                    size=sell_setup_data["sell_setup"].apply(
-                        lambda x: 14 if x == 9 else 10
-                    ),
-                ),
-                name="Sell Setup",
-                hoverinfo="none",
-            )
-        )
-
-    # Add buy countdown numbers (green, clearly below candles)
-    buy_countdown_data = data[data["buy_countdown"] > 0].copy()
-    if not buy_countdown_data.empty:
-        fig.add_trace(
-            go.Scatter(
-                x=buy_countdown_data.index,
-                # Below the low for visibility
-                y=buy_countdown_data["Low"] - (buy_countdown_data["Low"] * 0.004),
-                mode="text",
-                text=buy_countdown_data["buy_countdown"].apply(
-                    lambda x: f"<b>{x}</b>" if x == 13 else str(x)
-                ),
-                textposition="bottom center",
-                textfont=dict(
-                    color="green",
-                    size=buy_countdown_data["buy_countdown"].apply(
-                        lambda x: 14 if x == 13 else 10
-                    ),
-                ),
-                name="Buy Countdown",
-                hoverinfo="none",
-            )
-        )
-
-    # Add sell countdown numbers (red, clearly below candles)
-    sell_countdown_data = data[data["sell_countdown"] > 0].copy()
-    if not sell_countdown_data.empty:
-        fig.add_trace(
-            go.Scatter(
-                x=sell_countdown_data.index,
-                # Further below the low for better separation from buy countdown
-                y=sell_countdown_data["Low"] - (sell_countdown_data["Low"] * 0.008),
-                mode="text",
-                text=sell_countdown_data["sell_countdown"].apply(
-                    lambda x: f"<b>{x}</b>" if x == 13 else str(x)
-                ),
-                textposition="bottom center",
-                textfont=dict(
-                    color="red",
-                    size=sell_countdown_data["sell_countdown"].apply(
-                        lambda x: 14 if x == 13 else 10
-                    ),
-                ),
-                name="Sell Countdown",
-                hoverinfo="none",
-            )
-        )
-
-    # Add visual markers for completed setups (9)
-    completed_buy_setups = data[data["buy_setup"] == 9].index
-    for date in completed_buy_setups:
-        # Add triangle marker for buy setup completion
-        fig.add_trace(
-            go.Scatter(
-                x=[date],
-                y=[data.loc[date, "Low"] * 0.99],
-                mode="markers",
-                marker=dict(
-                    symbol="triangle-up",
-                    size=12,
-                    color="green",
-                    line=dict(width=1, color="darkgreen"),
-                ),
-                name="Buy Setup Complete",
-                legendgroup="Buy Setup Complete",
-                showlegend=(
-                    date == completed_buy_setups[0]
-                    if len(completed_buy_setups) > 0
-                    else True
-                ),
-                hoverinfo="text",
-                hovertext=f"Buy Setup Complete on {date.strftime('%Y-%m-%d')}",
-            )
-        )
-
-    completed_sell_setups = data[data["sell_setup"] == 9].index
-    for date in completed_sell_setups:
-        # Add triangle marker for sell setup completion
-        fig.add_trace(
-            go.Scatter(
-                x=[date],
-                y=[data.loc[date, "High"] * 1.01],
-                mode="markers",
-                marker=dict(
-                    symbol="triangle-down",
-                    size=12,
-                    color="red",
-                    line=dict(width=1, color="darkred"),
-                ),
-                name="Sell Setup Complete",
-                legendgroup="Sell Setup Complete",
-                showlegend=(
-                    date == completed_sell_setups[0]
-                    if len(completed_sell_setups) > 0
-                    else True
-                ),
-                hoverinfo="text",
-                hovertext=f"Sell Setup Complete on {date.strftime('%Y-%m-%d')}",
-            )
-        )
-
-    # Add markers for completed countdowns (13)
-    completed_buy_countdowns = data[data["buy_countdown"] == 13].index
-    for date in completed_buy_countdowns:
-        # Add star marker for buy countdown completion
-        fig.add_trace(
-            go.Scatter(
-                x=[date],
-                y=[data.loc[date, "Low"] * 0.97],
-                mode="markers",
-                marker=dict(
-                    symbol="star",
-                    size=16,
-                    color="green",
-                    line=dict(width=1, color="darkgreen"),
-                ),
-                name="Buy Countdown Complete",
-                legendgroup="Buy Countdown Complete",
-                showlegend=(
-                    date == completed_buy_countdowns[0]
-                    if len(completed_buy_countdowns) > 0
-                    else True
-                ),
-                hoverinfo="text",
-                hovertext=f"Buy Countdown Complete on {date.strftime('%Y-%m-%d')}",
-            )
-        )
-
-    completed_sell_countdowns = data[data["sell_countdown"] == 13].index
-    for date in completed_sell_countdowns:
-        # Add star marker for sell countdown completion
-        fig.add_trace(
-            go.Scatter(
-                x=[date],
-                y=[data.loc[date, "High"] * 1.03],
-                mode="markers",
-                marker=dict(
-                    symbol="star",
-                    size=16,
-                    color="red",
-                    line=dict(width=1, color="darkred"),
-                ),
-                name="Sell Countdown Complete",
-                legendgroup="Sell Countdown Complete",
-                showlegend=(
-                    date == completed_sell_countdowns[0]
-                    if len(completed_sell_countdowns) > 0
-                    else True
-                ),
-                hoverinfo="text",
-                hovertext=f"Sell Countdown Complete on {date.strftime('%Y-%m-%d')}",
-            )
-        )
-
-    # Add setup support lines
-    setup_support_data = data[data["setup_support"].notnull()].copy()
-    if not setup_support_data.empty:
-        for idx, row in setup_support_data.iterrows():
-            # Find the first cancellation point after this index, if any
-            cancellation_point = None
-            current_index_position = data.index.get_loc(idx)
-
-            # Look for a cancellation point in the future
-            future_data = data.iloc[current_index_position:]
-            future_canceled_points = future_data[
-                future_data["support_canceled"] == True
-            ].index
-
-            if len(future_canceled_points) > 0:
-                cancellation_point = future_canceled_points[0]
-                end_idx = cancellation_point
-            else:
-                # If no cancellation point, extend to the end of the data
-                end_idx = data.index[-1]
-
-            # Check if this support line is canceled
-            is_canceled = row.get("support_canceled", False)
-            line_style = "dot" if is_canceled else "dash"
-            line_color = "rgba(0, 128, 0, 0.4)" if is_canceled else "green"
-            annotation_text = "Support (Canceled)" if is_canceled else "Support"
-
-            # Draw the support line
-            fig.add_shape(
-                type="line",
-                x0=idx,
-                y0=row["setup_support"],
-                x1=end_idx,
-                y1=row["setup_support"],
-                line=dict(
-                    color=line_color,
-                    width=1.5,
-                    dash=line_style,
-                ),
-                opacity=0.7,
-            )
-
-            # Add annotation for setup support
-            fig.add_annotation(
-                x=idx,
-                y=row["setup_support"],
-                text=annotation_text,
-                showarrow=True,
-                arrowhead=1,
-                ax=40,
-                ay=20,
-                font=dict(color="green", size=10),
-                bgcolor="rgba(255, 255, 255, 0.7)",
-                bordercolor="green",
-                borderwidth=1,
-                borderpad=4,
-            )
-
-    # Add setup resistance lines
-    setup_resistance_data = data[data["setup_resistance"].notnull()].copy()
-    if not setup_resistance_data.empty:
-        for idx, row in setup_resistance_data.iterrows():
-            # Find the first cancellation point after this index, if any
-            cancellation_point = None
-            current_index_position = data.index.get_loc(idx)
-
-            # Look for a cancellation point in the future
-            future_data = data.iloc[current_index_position:]
-            future_canceled_points = future_data[
-                future_data["resistance_canceled"] == True
-            ].index
-
-            if len(future_canceled_points) > 0:
-                cancellation_point = future_canceled_points[0]
-                end_idx = cancellation_point
-            else:
-                # If no cancellation point, extend to the end of the data
-                end_idx = data.index[-1]
-
-            # Check if this resistance line is canceled
-            is_canceled = row.get("resistance_canceled", False)
-            line_style = "dot" if is_canceled else "dash"
-            line_color = "rgba(255, 0, 0, 0.4)" if is_canceled else "red"
-            annotation_text = "Resistance (Canceled)" if is_canceled else "Resistance"
-
-            # Draw the resistance line
-            fig.add_shape(
-                type="line",
-                x0=idx,
-                y0=row["setup_resistance"],
-                x1=end_idx,
-                y1=row["setup_resistance"],
-                line=dict(
-                    color=line_color,
-                    width=1.5,
-                    dash=line_style,
-                ),
-                opacity=0.7,
-            )
-
-            # Add annotation for setup resistance
-            fig.add_annotation(
-                x=idx,
-                y=row["setup_resistance"],
-                text=annotation_text,
-                showarrow=True,
-                arrowhead=1,
-                ax=-40,
-                ay=-20,
-                font=dict(color="red", size=10),
-                bgcolor="rgba(255, 255, 255, 0.7)",
-                bordercolor="red",
-                borderwidth=1,
-                borderpad=4,
-            )
-
-    # Add canceled support lines
-    setup_support_cancel_data = data[data["setup_support_cancel"].notnull()].copy()
-    if not setup_support_cancel_data.empty:
-        for idx, row in setup_support_cancel_data.iterrows():
-            # Calculate how far to extend the canceled support line
-            extension_length = 5
-            current_index_position = data.index.get_loc(idx)
-            if current_index_position + extension_length < len(data.index):
-                end_idx = data.index[current_index_position + extension_length]
-            else:
-                end_idx = data.index[-1]
-
-            # Draw the canceled support line
-            fig.add_shape(
-                type="line",
-                x0=idx,
-                y0=row["setup_support_cancel"],
-                x1=end_idx,
-                y1=row["setup_support_cancel"],
-                line=dict(
-                    color="rgba(0, 128, 0, 0.3)",
-                    width=1,
-                    dash="dot",
-                ),
-                opacity=0.5,
-            )
-
-            # Add annotation for canceled support
-            fig.add_annotation(
-                x=idx,
-                y=row["setup_support_cancel"],
-                text="Support Canceled",
-                showarrow=True,
-                arrowhead=1,
-                ax=30,
-                ay=15,
-                font=dict(color="green", size=8),
-                bgcolor="rgba(255, 255, 255, 0.5)",
-                bordercolor="green",
-                borderwidth=1,
-                borderpad=3,
-            )
-
-    # Add canceled resistance lines
-    setup_resistance_cancel_data = data[
-        data["setup_resistance_cancel"].notnull()
-    ].copy()
-    if not setup_resistance_cancel_data.empty:
-        for idx, row in setup_resistance_cancel_data.iterrows():
-            # Calculate how far to extend the canceled resistance line
-            extension_length = 5
-            current_index_position = data.index.get_loc(idx)
-            if current_index_position + extension_length < len(data.index):
-                end_idx = data.index[current_index_position + extension_length]
-            else:
-                end_idx = data.index[-1]
-
-            # Draw the canceled resistance line
-            fig.add_shape(
-                type="line",
-                x0=idx,
-                y0=row["setup_resistance_cancel"],
-                x1=end_idx,
-                y1=row["setup_resistance_cancel"],
-                line=dict(
-                    color="rgba(255, 0, 0, 0.3)",
-                    width=1,
-                    dash="dot",
-                ),
-                opacity=0.5,
-            )
-
-            # Add annotation for canceled resistance
-            fig.add_annotation(
-                x=idx,
-                y=row["setup_resistance_cancel"],
-                text="Resistance Canceled",
-                showarrow=True,
-                arrowhead=1,
-                ax=-30,
-                ay=-15,
-                font=dict(color="red", size=8),
-                bgcolor="rgba(255, 255, 255, 0.5)",
-                bordercolor="red",
-                borderwidth=1,
-                borderpad=3,
-            )
-
-    # Add X markers for actual cancellation points of support/resistance
-    support_canceled_points = data[data["support_canceled"] == True].index
-    for date in support_canceled_points:
-        # Add X marker for support cancellation
-        fig.add_trace(
-            go.Scatter(
-                x=[date],
-                y=[data.loc[date, "Low"] * 0.98],
-                mode="markers",
-                marker=dict(
-                    symbol="x",
-                    size=10,
-                    color="green",
-                    line=dict(width=1, color="darkgreen"),
-                ),
-                name="Support Canceled",
-                legendgroup="Support Canceled",
-                showlegend=(
-                    date == support_canceled_points[0]
-                    if len(support_canceled_points) > 0
-                    else True
-                ),
-                hoverinfo="text",
-                hovertext=f"Support Canceled on {date.strftime('%Y-%m-%d')}",
-            )
-        )
-
-    resistance_canceled_points = data[data["resistance_canceled"] == True].index
-    for date in resistance_canceled_points:
-        # Add X marker for resistance cancellation
-        fig.add_trace(
-            go.Scatter(
-                x=[date],
-                y=[data.loc[date, "High"] * 1.02],
-                mode="markers",
-                marker=dict(
-                    symbol="x",
-                    size=10,
-                    color="red",
-                    line=dict(width=1, color="darkred"),
-                ),
-                name="Resistance Canceled",
-                legendgroup="Resistance Canceled",
-                showlegend=(
-                    date == resistance_canceled_points[0]
-                    if len(resistance_canceled_points) > 0
-                    else True
-                ),
-                hoverinfo="text",
-                hovertext=f"Resistance Canceled on {date.strftime('%Y-%m-%d')}",
-            )
-        )
-
-    # Update layout
+    # Update layout with dark theme styling
+    title = f"TD Sequential Analysis{' - ' + stock_name if stock_name else ''}"
     fig.update_layout(
-        title=f"TD Sequential Indicator for {ticker}",
-        xaxis_title="Date",
-        yaxis_title="Price",
+        title=dict(text=title, font=dict(size=24, family="Arial", color="#FFFFFF")),
+        height=800,
+        width=1200,
+        margin=dict(l=50, r=50, t=100, b=100),
         xaxis_rangeslider_visible=False,
-        height=600,
-        width=1000,
-        showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+        template="plotly_dark",  # Use dark template
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        plot_bgcolor="#121212",  # Dark background
+        paper_bgcolor="#121212",  # Dark paper
+        hovermode="x unified",
+        font=dict(family="Arial", color="#FFFFFF"),  # Light text for dark background
+    )
+
+    # Customize axes for better readability in dark theme
+    fig.update_xaxes(
+        showgrid=True,
+        gridwidth=0.5,
+        gridcolor="rgba(80,80,80,0.5)",
+        zeroline=False,
+        title_font=dict(color="#FFFFFF"),
+        tickfont=dict(color="#FFFFFF"),
+    )
+
+    fig.update_yaxes(
+        title="Price",
+        showgrid=True,
+        gridwidth=0.5,
+        gridcolor="rgba(80,80,80,0.5)",
+        zeroline=False,
+        title_font=dict(color="#FFFFFF"),
+        tickfont=dict(color="#FFFFFF"),
     )
 
     return fig

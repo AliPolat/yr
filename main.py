@@ -3,8 +3,8 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 
-from calculate_tds import calculate_td_sequential
-from plot_tds import plot_td_sequential
+from calculate_tds import calculate_tdsequential
+from plot_tds import plot_tdsequential
 
 # Define functions first, before the Streamlit interface code
 
@@ -82,35 +82,15 @@ if st.sidebar.button("Download Data"):
         st.write(f"Interval: {interval_names[selected_interval]}")
 
         # Apply TD Sequential calculation
-        td_data = calculate_td_sequential(data, ticker=ticker)
+        td_data = calculate_tdsequential(data, stock_name=ticker)
 
         # Plot candlestick chart with TD Sequential indicators
-        fig = plot_td_sequential(td_data, ticker=ticker)
+        fig = plot_tdsequential(td_data, stock_name=ticker)
         st.plotly_chart(fig, use_container_width=True)
 
         # Display the dataframe
         st.subheader("Data Table")
-        display_cols = [
-            "Open",
-            "High",
-            "Low",
-            "Close",
-            "Volume",
-            "buy_setup",
-            "sell_setup",
-            "buy_countdown",
-            "sell_countdown",
-            "setup_support",
-            "setup_support_cancel",
-            "support_canceled",
-            "setup_resistance",
-            "setup_resistance_cancel",
-            "resistance_canceled",
-            "buy_setup_perfected",
-            "sell_setup_perfected",
-            "td_setup_direction",
-            "td_countdown_direction",
-        ]
-        
-        st.dataframe(td_data[display_cols])
-        #st.dataframe(td_data)
+        display_cols = ["Open","High","Low","Close", "Volume"]
+        #st.dataframe(td_data[display_cols])
+
+        st.dataframe(td_data)
