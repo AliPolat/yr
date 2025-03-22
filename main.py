@@ -85,7 +85,7 @@ if st.sidebar.button("Download Data"):
         td_data = calculate_tdsequential(data, stock_name=ticker)
 
         # Plot candlestick chart with TD Sequential indicators
-        fig = plot_tdsequential(td_data, stock_name=ticker)
+        fig = plot_tdsequential(td_data, stock_name=ticker, window=1000)
         st.plotly_chart(fig, use_container_width=True)
 
         # Display the dataframe

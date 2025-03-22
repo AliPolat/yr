@@ -4,7 +4,7 @@ import numpy as np
 
 def calculate_tdsequential(df, stock_name="AAPL"):
     """
-    Calculate TD Sequential indicators from OHLC data.
+    Calculate TD Sequential indicators from OHLC data, including countdown cancel points.
 
     Parameters:
     -----------
@@ -95,96 +95,166 @@ def calculate_tdsequential(df, stock_name="AAPL"):
     # Initialize countdown columns
     df["buy_countdown"] = 0
     df["sell_countdown"] = 0
+    df["buy_countdown_active"] = 0
+    df["sell_countdown_active"] = 0
     df["perfect_buy_13"] = 0
     df["perfect_sell_13"] = 0
 
-    # Track active setups and countdowns
-    active_buy_setups = []
-    active_sell_setups = []
+    # Store indices of setup and countdown bars
     buy_countdown_bars = []
     sell_countdown_bars = []
 
+    # Track active countdowns
+    buy_countdown_active = False
+    sell_countdown_active = False
+
+    # Setup that initiated current countdown
+    current_buy_setup_idx = None
+    current_sell_setup_idx = None
+
+    # TDST levels for buy and sell countdowns
+    buy_tdst_level = None
+    sell_tdst_level = None
+
     # Calculate countdowns
     for i in range(9, len(df)):
-        # Check for completed buy setup (9 consecutive bars)
+        # Process buy side
+        # Check if this bar completes a buy setup (9 consecutive bars)
         if df["buy_setup"].iloc[i] == 9:
-            active_buy_setups.append(i)
+            # If no active countdown or we have a completed 13-bar countdown
+            if not buy_countdown_active or (
+                buy_countdown_active and len(buy_countdown_bars) == 13
+            ):
+                # Start a new countdown
+                buy_countdown_active = True
+                buy_countdown_bars = []
+                current_buy_setup_idx = i
+                df.loc[df.index[i], "buy_countdown_active"] = 1
 
-        # Check for completed sell setup (9 consecutive bars)
+                # Set TDST level for buy countdown (highest high of the buy setup)
+                buy_tdst_level = df["high"].iloc[i - 8 : i + 1].max()
+
+            # If there's an active countdown that hasn't reached 13 yet
+            elif buy_countdown_active and len(buy_countdown_bars) < 13:
+                # TD Sequential rules: A new setup can recycle the countdown
+                # Only if it's more aggressive (lower low or perfect 9)
+                if (
+                    df["perfect_buy_9"].iloc[i] == 1
+                    or df["low"].iloc[i] < df["low"].iloc[current_buy_setup_idx]
+                ):
+                    # Recycle/restart the countdown
+                    buy_countdown_bars = []
+                    current_buy_setup_idx = i
+                    buy_tdst_level = df["high"].iloc[i - 8 : i + 1].max()
+
+        # Process sell side
+        # Check if this bar completes a sell setup (9 consecutive bars)
         if df["sell_setup"].iloc[i] == 9:
-            active_sell_setups.append(i)
+            # If no active countdown or we have a completed 13-bar countdown
+            if not sell_countdown_active or (
+                sell_countdown_active and len(sell_countdown_bars) == 13
+            ):
+                # Start a new countdown
+                sell_countdown_active = True
+                sell_countdown_bars = []
+                current_sell_setup_idx = i
+                df.loc[df.index[i], "sell_countdown_active"] = 1
 
-        # Process Buy Countdown - must wait until after a completed setup
-        if active_buy_setups and i > active_buy_setups[-1]:
-            # Buy Countdown condition: Close less than or equal to low two bars earlier
-            if df["close"].iloc[i] <= df["low"].iloc[i - 2]:
+                # Set TDST level for sell countdown (lowest low of the sell setup)
+                sell_tdst_level = df["low"].iloc[i - 8 : i + 1].min()
+
+            # If there's an active countdown that hasn't reached 13 yet
+            elif sell_countdown_active and len(sell_countdown_bars) < 13:
+                # TD Sequential rules: A new setup can recycle the countdown
+                # Only if it's more aggressive (higher high or perfect 9)
+                if (
+                    df["perfect_sell_9"].iloc[i] == 1
+                    or df["high"].iloc[i] > df["high"].iloc[current_sell_setup_idx]
+                ):
+                    # Recycle/restart the countdown
+                    sell_countdown_bars = []
+                    current_sell_setup_idx = i
+                    sell_tdst_level = df["low"].iloc[i - 8 : i + 1].min()
+
+        # Process Buy Countdown
+        if buy_countdown_active:
+            # Mark countdown as active in dataframe
+            df.loc[df.index[i], "buy_countdown_active"] = 1
+
+            # Check for countdown cancel condition
+            if buy_tdst_level is not None and df["close"].iloc[i] > buy_tdst_level:
+                # Cancel the buy countdown
+                buy_countdown_active = False
+                buy_countdown_bars = []
+                df.loc[df.index[i], "buy_countdown"] = 0  # Reset buy_countdown
+                continue
+
+            # Check for countdown qualifying bar: Close <= Low of 2 bars earlier
+            if i >= 2 and df["close"].iloc[i] <= df["low"].iloc[i - 2]:
+                # Add this bar to qualifying bars
                 buy_countdown_bars.append(i)
-                current_countdown = len(buy_countdown_bars)
-                df.loc[df.index[i], "buy_countdown"] = current_countdown
 
-                # Check for perfect 13 when we reach the 13th countdown bar
-                if current_countdown == 13:
+                # Update countdown count
+                current_count = len(buy_countdown_bars)
+                df.loc[df.index[i], "buy_countdown"] = current_count
+
+                # Check for perfect 13 when we reach the 13th bar
+                if current_count == 13:
+                    # Get bar 8 of the countdown
                     if len(buy_countdown_bars) >= 8:
-                        # Bar 8 of the countdown
-                        bar_8_idx = buy_countdown_bars[7]
+                        bar_8_idx = buy_countdown_bars[7]  # 8th bar (0-indexed)
+
                         # Perfect Buy 13: Close of bar 13 ≤ Low of bar 8
                         if df["close"].iloc[i] <= df["low"].iloc[bar_8_idx]:
                             df.loc[df.index[i], "perfect_buy_13"] = 1
 
                     # Reset countdown after reaching 13
-                    buy_countdown_bars = []
-                    active_buy_setups = []
+                    buy_countdown_active = False
+            else:
+                # Bar doesn't qualify, but countdown continues
+                # Keep the previous countdown value
+                if buy_countdown_bars:
+                    df.loc[df.index[i], "buy_countdown"] = len(buy_countdown_bars)
 
-            # Check for buy countdown cancellation conditions
-            if active_buy_setups and buy_countdown_bars:
-                # 1. If a new buy setup starts during the countdown
-                if df["buy_setup"].iloc[i] == 9:
-                    # Reset and start a new countdown phase
-                    buy_countdown_bars = []
-                    active_buy_setups = [i]
+        # Process Sell Countdown
+        if sell_countdown_active:
+            # Mark countdown as active in dataframe
+            df.loc[df.index[i], "sell_countdown_active"] = 1
 
-                # 2. If price makes a new low below the low of the first bar after setup completion
-                if buy_countdown_bars and i > active_buy_setups[-1] + 1:
-                    first_bar_after_setup = active_buy_setups[-1] + 1
-                    if df["low"].iloc[i] < df["low"].iloc[first_bar_after_setup]:
-                        buy_countdown_bars = []
-                        active_buy_setups = []
+            # Check for countdown cancel condition
+            if sell_tdst_level is not None and df["close"].iloc[i] < sell_tdst_level:
+                # Cancel the sell countdown
+                sell_countdown_active = False
+                sell_countdown_bars = []
+                df.loc[df.index[i], "sell_countdown"] = 0  # Reset sell_countdown
+                continue
 
-        # Process Sell Countdown - must wait until after a completed setup
-        if active_sell_setups and i > active_sell_setups[-1]:
-            # Sell Countdown condition: Close greater than or equal to high two bars earlier
-            if df["close"].iloc[i] >= df["high"].iloc[i - 2]:
+            # Check for countdown qualifying bar: Close >= High of 2 bars earlier
+            if i >= 2 and df["close"].iloc[i] >= df["high"].iloc[i - 2]:
+                # Add this bar to qualifying bars
                 sell_countdown_bars.append(i)
-                current_countdown = len(sell_countdown_bars)
-                df.loc[df.index[i], "sell_countdown"] = current_countdown
 
-                # Check for perfect 13 when we reach the 13th countdown bar
-                if current_countdown == 13:
+                # Update countdown count
+                current_count = len(sell_countdown_bars)
+                df.loc[df.index[i], "sell_countdown"] = current_count
+
+                # Check for perfect 13 when we reach the 13th bar
+                if current_count == 13:
+                    # Get bar 8 of the countdown
                     if len(sell_countdown_bars) >= 8:
-                        # Bar 8 of the countdown
-                        bar_8_idx = sell_countdown_bars[7]
+                        bar_8_idx = sell_countdown_bars[7]  # 8th bar (0-indexed)
+
                         # Perfect Sell 13: Close of bar 13 ≥ High of bar 8
                         if df["close"].iloc[i] >= df["high"].iloc[bar_8_idx]:
                             df.loc[df.index[i], "perfect_sell_13"] = 1
 
                     # Reset countdown after reaching 13
-                    sell_countdown_bars = []
-                    active_sell_setups = []
-
-            # Check for sell countdown cancellation conditions
-            if active_sell_setups and sell_countdown_bars:
-                # 1. If a new sell setup starts during the countdown
-                if df["sell_setup"].iloc[i] == 9:
-                    # Reset and start a new countdown phase
-                    sell_countdown_bars = []
-                    active_sell_setups = [i]
-
-                # 2. If price makes a new high above the high of the first bar after setup completion
-                if sell_countdown_bars and i > active_sell_setups[-1] + 1:
-                    first_bar_after_setup = active_sell_setups[-1] + 1
-                    if df["high"].iloc[i] > df["high"].iloc[first_bar_after_setup]:
-                        sell_countdown_bars = []
-                        active_sell_setups = []
+                    sell_countdown_active = False
+            else:
+                # Bar doesn't qualify, but countdown continues
+                # Keep the previous countdown value
+                if sell_countdown_bars:
+                    df.loc[df.index[i], "sell_countdown"] = len(sell_countdown_bars)
 
     # Clean up intermediate columns
     df = df.drop(
