@@ -6,7 +6,9 @@ from plotly.subplots import make_subplots
 
 def plot_tdsequential(df, stock_name=None, window=100):
     """
-    Plot TD Sequential with TDST levels (buy=resistance, sell=support)
+    Plot TD Sequential with BREAKING TDST lines (discontinuous when levels change)
+    - Buy TDST (resistance) = Red dashed line (breaks when level changes/inactive)
+    - Sell TDST (support) = Green dashed line (breaks when level changes/inactive)
     """
     # Data preparation
     plot_df = df.iloc[-window:] if len(df) > window else df.copy()
@@ -27,32 +29,71 @@ def plot_tdsequential(df, stock_name=None, window=100):
         )
     )
 
-    # --- TDST LEVELS ---
-    # Buy TDST (resistance) - Red dashed line
-    if "buy_tdst_level" in plot_df:
-        fig.add_trace(
-            go.Scatter(
-                x=plot_df.index,
-                y=plot_df["buy_tdst_level"],
-                mode="lines",
-                line=dict(color="rgba(255, 0, 0, 0.5)", width=1, dash="dot"),
-                name="Buy TDST (Resistance)",
-                hoverinfo="y",
-            )
-        )
+    # --- DISCONTINUOUS TDST LEVELS ---
+    def create_breaking_segments(series):
+        """Create line segments that break when value changes or becomes NaN"""
+        segments = []
+        current_segment = []
+        prev_val = None
 
-    # Sell TDST (support) - Green dashed line
-    if "sell_tdst_level" in plot_df:
-        fig.add_trace(
-            go.Scatter(
-                x=plot_df.index,
-                y=plot_df["sell_tdst_level"],
-                mode="lines",
-                line=dict(color="rgba(0, 255, 0, 0.5)", width=1, dash="dot"),
-                name="Sell TDST (Support)",
-                hoverinfo="y",
+        for idx, val in series.items():
+            # Break conditions:
+            # 1. Value changed
+            # 2. Became NaN (inactive)
+            # 3. Previous was NaN (new activation)
+            if (
+                (val != prev_val and not (pd.isna(val) and pd.isna(prev_val)))
+                or (pd.isna(val) and not pd.isna(prev_val))
+                or (not pd.isna(val) and pd.isna(prev_val))
+            ):
+                if current_segment:
+                    segments.append(current_segment)
+                current_segment = []
+
+            if not pd.isna(val):
+                current_segment.append((idx, val))
+            prev_val = val
+
+        if current_segment:
+            segments.append(current_segment)
+
+        return segments
+
+    # Buy TDST (resistance) - Red dashed
+    if "buy_tdst_level" in plot_df:
+        buy_segments = create_breaking_segments(plot_df["buy_tdst_level"])
+        for seg_num, segment in enumerate(buy_segments):
+            x_vals, y_vals = zip(*segment)
+            fig.add_trace(
+                go.Scatter(
+                    x=x_vals,
+                    y=y_vals,
+                    mode="lines",
+                    line=dict(color="rgba(255, 80, 80, 0.8)", width=1.5, dash="dot"),
+                    name="Buy TDST" if seg_num == 0 else None,
+                    showlegend=seg_num == 0,
+                    hoverinfo="y",
+                    hovertemplate="Resistance: %{y:.2f}<extra></extra>",
+                )
             )
-        )
+
+    # Sell TDST (support) - Green dashed
+    if "sell_tdst_level" in plot_df:
+        sell_segments = create_breaking_segments(plot_df["sell_tdst_level"])
+        for seg_num, segment in enumerate(sell_segments):
+            x_vals, y_vals = zip(*segment)
+            fig.add_trace(
+                go.Scatter(
+                    x=x_vals,
+                    y=y_vals,
+                    mode="lines",
+                    line=dict(color="rgba(80, 255, 80, 0.8)", width=1.5, dash="dot"),
+                    name="Sell TDST" if seg_num == 0 else None,
+                    showlegend=seg_num == 0,
+                    hoverinfo="y",
+                    hovertemplate="Support: %{y:.2f}<extra></extra>",
+                )
+            )
 
     # --- TD Sequential Annotations ---
     price_range = plot_df["high"].max() - plot_df["low"].min()
