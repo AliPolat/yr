@@ -6,152 +6,302 @@ from plotly.subplots import make_subplots
 
 def plot_tdsequential(df, stock_name=None, window=100):
     """
-    Plot TD Sequential with TDST levels (buy=resistance, sell=support)
+    Plot TD Sequential indicators on a candlestick chart with improved readability and dark theme.
+    Shows all setup numbers (1-9) above candlesticks and only first occurrence of countdown numbers (1-13) below candlesticks.
+
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame with OHLC data and TD Sequential columns from calculate_tdsequential()
+    stock_name : str, optional
+        Name of the stock for the chart title
+    window : int, optional
+        Number of bars to display, default is 100
+
+    Returns:
+    --------
+    plotly.graph_objects.Figure
+        Plotly figure object
     """
-    # Data preparation
-    plot_df = df.iloc[-window:] if len(df) > window else df.copy()
+    # Make a copy and limit to the window size
+    if len(df) > window:
+        plot_df = df.iloc[-window:].copy()
+    else:
+        plot_df = df.copy()
 
-    # Create figure with dark theme
-    fig = make_subplots(rows=1, cols=1)
-    fig.update_layout(template="plotly_dark")
+    # Get date column or index for x-axis
+    if isinstance(plot_df.index, pd.DatetimeIndex):
+        x = plot_df.index
+    elif "date" in plot_df.columns:
+        x = plot_df["date"]
+    else:
+        x = np.arange(len(plot_df))
 
-    # Add candlesticks
-    fig.add_trace(
-        go.Candlestick(
-            x=plot_df.index,
-            open=plot_df["open"],
-            high=plot_df["high"],
-            low=plot_df["low"],
-            close=plot_df["close"],
-            name="Price",
-        )
+    # Create a single subplot with more vertical space
+    fig = make_subplots(rows=1, cols=1, vertical_spacing=0.02)
+
+    # Add candlestick chart
+    candlestick = go.Candlestick(
+        x=x,
+        open=plot_df["open"],
+        high=plot_df["high"],
+        low=plot_df["low"],
+        close=plot_df["close"],
+        name="Price",
+        showlegend=False,
+        increasing=dict(line=dict(width=1.5), fillcolor="rgba(0,168,107,0.6)"),
+        decreasing=dict(line=dict(width=1.5), fillcolor="rgba(220,39,39,0.6)"),
     )
+    fig.add_trace(candlestick)
 
-    # --- TDST LEVELS ---
-    # Buy TDST (resistance) - Red dashed line
-    if "buy_tdst_level" in plot_df:
-        fig.add_trace(
-            go.Scatter(
-                x=plot_df.index,
-                y=plot_df["buy_tdst_level"],
-                mode="lines",
-                line=dict(color="rgba(255, 0, 0, 0.5)", width=1, dash="dot"),
-                name="Buy TDST (Resistance)",
-                hoverinfo="y",
-            )
-        )
-
-    # Sell TDST (support) - Green dashed line
-    if "sell_tdst_level" in plot_df:
-        fig.add_trace(
-            go.Scatter(
-                x=plot_df.index,
-                y=plot_df["sell_tdst_level"],
-                mode="lines",
-                line=dict(color="rgba(0, 255, 0, 0.5)", width=1, dash="dot"),
-                name="Sell TDST (Support)",
-                hoverinfo="y",
-            )
-        )
-
-    # --- TD Sequential Annotations ---
+    # Calculate price range for annotation positioning
     price_range = plot_df["high"].max() - plot_df["low"].min()
+
+    # Spacing for better readability
     setup_offset = price_range * 0.02
     countdown_offset = price_range * 0.02
     signal_offset = price_range * 0.05
 
-    # Track last countdown to avoid duplicates
+    # Dictionary to track position conflicts (avoid overlapping annotations)
+    annotation_positions = {}
+
+    # Function to handle potential annotation overlaps
+    def get_adjusted_position(idx, y_position, is_above):
+        key = (idx, is_above)
+        if key in annotation_positions:
+            # If this position is already taken, adjust by a small amount
+            if is_above:
+                y_position += setup_offset
+            else:
+                y_position -= countdown_offset
+            annotation_positions[key] = y_position
+        else:
+            annotation_positions[key] = y_position
+        return y_position
+
+    # Add Buy Setup annotations (above candlesticks)
+    for i, row in plot_df.iterrows():
+        idx = x[plot_df.index.get_loc(i)] if isinstance(x, pd.DatetimeIndex) else i
+
+        # Show all setup numbers
+        if row["buy_setup"] > 0:
+            y_pos = get_adjusted_position(idx, row["high"] + setup_offset, True)
+            # Make higher numbers more prominent
+            font_size = 10 + min(2, row["buy_setup"] - 1)
+            fig.add_annotation(
+                x=idx,
+                y=y_pos,
+                text=str(int(row["buy_setup"])),
+                showarrow=False,
+                font=dict(color="rgb(0,168,107)", size=font_size, family="Arial"),
+                opacity=0.9,
+            )
+
+        # Highlight perfect buy setup 9s
+        if row["buy_setup"] == 9 and row.get("perfect_buy_9", 0) == 1:
+            fig.add_annotation(
+                x=idx,
+                y=row["high"] + signal_offset,
+                text="BUY 9",
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1,
+                arrowwidth=2,
+                arrowcolor="rgb(0,168,107)",
+                font=dict(color="white", size=12, family="Arial Black"),
+                bgcolor="rgba(0,168,107,0.5)",  # Transparent background
+                borderpad=4,
+                borderwidth=0,
+                opacity=0.9,
+            )
+
+    # Add Sell Setup annotations (above candlesticks)
+    for i, row in plot_df.iterrows():
+        idx = x[plot_df.index.get_loc(i)] if isinstance(x, pd.DatetimeIndex) else i
+
+        # Show all setup numbers
+        if row["sell_setup"] > 0:
+            y_pos = get_adjusted_position(idx, row["high"] + setup_offset, True)
+            # Make higher numbers more prominent
+            font_size = 10 + min(2, row["sell_setup"] - 1)
+            fig.add_annotation(
+                x=idx,
+                y=y_pos,
+                text=str(int(row["sell_setup"])),
+                showarrow=False,
+                font=dict(color="rgb(220,39,39)", size=font_size, family="Arial"),
+                opacity=0.9,
+            )
+
+        # Highlight perfect sell setup 9s
+        if row["sell_setup"] == 9 and row.get("perfect_sell_9", 0) == 1:
+            fig.add_annotation(
+                x=idx,
+                y=row["high"] + signal_offset,
+                text="SELL 9",
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1,
+                arrowwidth=2,
+                arrowcolor="rgb(220,39,39)",
+                font=dict(color="white", size=12, family="Arial Black"),
+                bgcolor="rgba(220,39,39,0.5)",  # Transparent background
+                borderpad=4,
+                borderwidth=0,
+                opacity=0.9,
+            )
+
+    # Track the last countdown numbers to detect repeats
     last_buy_countdown = None
     last_sell_countdown = None
 
+    # Add Buy Countdown annotations (below candlesticks)
     for i, row in plot_df.iterrows():
-        # Setup Numbers (all shown)
-        if row["buy_setup"] > 0:
-            fig.add_annotation(
-                x=i,
-                y=row["high"] + setup_offset,
-                text=str(int(row["buy_setup"])),
-                font=dict(color="lime", size=10 + min(2, row["buy_setup"] - 1)),
-                showarrow=False,
-            )
-            if row["buy_setup"] == 9 and row.get("perfect_buy_9", 0) == 1:
-                fig.add_annotation(
-                    x=i,
-                    y=row["high"] + signal_offset,
-                    text="BUY 9",
-                    bgcolor="rgba(0,168,107,0.5)",
-                    font=dict(color="white", size=12),
-                    showarrow=True,
-                    arrowhead=2,
-                )
+        idx = x[plot_df.index.get_loc(i)] if isinstance(x, pd.DatetimeIndex) else i
 
-        if row["sell_setup"] > 0:
-            fig.add_annotation(
-                x=i,
-                y=row["high"] + setup_offset,
-                text=str(int(row["sell_setup"])),
-                font=dict(color="red", size=10 + min(2, row["sell_setup"] - 1)),
-                showarrow=False,
-            )
-            if row["sell_setup"] == 9 and row.get("perfect_sell_9", 0) == 1:
-                fig.add_annotation(
-                    x=i,
-                    y=row["high"] + signal_offset,
-                    text="SELL 9",
-                    bgcolor="rgba(220,39,39,0.5)",
-                    font=dict(color="white", size=12),
-                    showarrow=True,
-                    arrowhead=2,
-                )
-
-        # Countdown Numbers (first occurrence only)
+        # Only show the first occurrence of each countdown number
         if row["buy_countdown"] > 0 and row["buy_countdown"] != last_buy_countdown:
+            y_pos = get_adjusted_position(idx, row["low"] - countdown_offset, False)
+            font_size = 10 + min(2, row["buy_countdown"] // 5)
             fig.add_annotation(
-                x=i,
-                y=row["low"] - countdown_offset,
+                x=idx,
+                y=y_pos,
                 text=str(int(row["buy_countdown"])),
-                font=dict(color="lime", size=10 + min(2, row["buy_countdown"] // 5)),
                 showarrow=False,
+                font=dict(color="rgb(0,168,107)", size=font_size, family="Arial"),
+                opacity=0.9,
             )
+
+            # Highlight perfect buy countdown 13s
             if row["buy_countdown"] == 13 and row.get("perfect_buy_13", 0) == 1:
                 fig.add_annotation(
-                    x=i,
+                    x=idx,
                     y=row["low"] - signal_offset,
                     text="BUY 13",
-                    bgcolor="rgba(0,168,107,0.5)",
-                    font=dict(color="white", size=12),
                     showarrow=True,
                     arrowhead=2,
+                    arrowsize=1,
+                    arrowwidth=2,
+                    arrowcolor="rgb(0,168,107)",
+                    font=dict(color="white", size=12, family="Arial Black"),
+                    bgcolor="rgba(0,168,107,0.5)",  # Transparent background
+                    borderpad=4,
+                    borderwidth=0,
+                    opacity=0.9,
                 )
-            last_buy_countdown = row["buy_countdown"]
 
+        # Update the last countdown number
+        last_buy_countdown = row["buy_countdown"] if row["buy_countdown"] > 0 else None
+
+    # Add Sell Countdown annotations (below candlesticks)
+    for i, row in plot_df.iterrows():
+        idx = x[plot_df.index.get_loc(i)] if isinstance(x, pd.DatetimeIndex) else i
+
+        # Only show the first occurrence of each countdown number
         if row["sell_countdown"] > 0 and row["sell_countdown"] != last_sell_countdown:
+            y_pos = get_adjusted_position(idx, row["low"] - countdown_offset, False)
+            font_size = 10 + min(2, row["sell_countdown"] // 5)
             fig.add_annotation(
-                x=i,
-                y=row["low"] - countdown_offset,
+                x=idx,
+                y=y_pos,
                 text=str(int(row["sell_countdown"])),
-                font=dict(color="red", size=10 + min(2, row["sell_countdown"] // 5)),
                 showarrow=False,
+                font=dict(color="rgb(220,39,39)", size=font_size, family="Arial"),
+                opacity=0.9,
             )
+
+            # Highlight perfect sell countdown 13s
             if row["sell_countdown"] == 13 and row.get("perfect_sell_13", 0) == 1:
                 fig.add_annotation(
-                    x=i,
+                    x=idx,
                     y=row["low"] - signal_offset,
                     text="SELL 13",
-                    bgcolor="rgba(220,39,39,0.5)",
-                    font=dict(color="white", size=12),
                     showarrow=True,
                     arrowhead=2,
+                    arrowsize=1,
+                    arrowwidth=2,
+                    arrowcolor="rgb(220,39,39)",
+                    font=dict(color="white", size=12, family="Arial Black"),
+                    bgcolor="rgba(220,39,39,0.5)",  # Transparent background
+                    borderpad=4,
+                    borderwidth=0,
+                    opacity=0.9,
                 )
-            last_sell_countdown = row["sell_countdown"]
 
-    # Layout enhancements
+        # Update the last countdown number
+        last_sell_countdown = (
+            row["sell_countdown"] if row["sell_countdown"] > 0 else None
+        )
+
+    # Create a clearer legend using shapes and annotations
+    fig.add_shape(
+        type="rect",
+        xref="paper",
+        yref="paper",
+        x0=0.01,
+        y0=0.01,
+        x1=0.3,
+        y1=0.12,
+        fillcolor="rgba(40,40,40,0.9)",  # Dark background for legend
+        line=dict(color="#555555", width=1),
+        layer="below",
+    )
+
+    # Add clearer, color-coded legend text
+    legend_texts = [
+        ("BUY SETUP (1-9)", "rgb(0,168,107)", 0.025, 0.095),
+        ("SELL SETUP (1-9)", "rgb(220,39,39)", 0.025, 0.075),
+        ("BUY COUNTDOWN (1-13)", "rgb(0,168,107)", 0.025, 0.055),
+        ("SELL COUNTDOWN (1-13)", "rgb(220,39,39)", 0.025, 0.035),
+    ]
+
+    for text, color, x, y in legend_texts:
+        fig.add_annotation(
+            x=x,
+            y=y,
+            xref="paper",
+            yref="paper",
+            text=text,
+            showarrow=False,
+            font=dict(size=11, color=color, family="Arial"),
+            align="left",
+            bgcolor="rgba(0,0,0,0)",
+        )
+
+    # Update layout with dark theme styling
+    title = f"TD Sequential Analysis{' - ' + stock_name if stock_name else ''}"
     fig.update_layout(
-        title=f"TD Sequential {' - ' + stock_name if stock_name else ''}",
+        title=dict(text=title, font=dict(size=24, family="Arial", color="#FFFFFF")),
         height=800,
+        width=1200,
+        margin=dict(l=50, r=50, t=100, b=100),
         xaxis_rangeslider_visible=False,
+        template="plotly_dark",  # Use dark template
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        plot_bgcolor="#121212",  # Dark background
+        paper_bgcolor="#121212",  # Dark paper
         hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, itemsizing="constant"),
+        font=dict(family="Arial", color="#FFFFFF"),  # Light text for dark background
+    )
+
+    # Customize axes for better readability in dark theme
+    fig.update_xaxes(
+        showgrid=True,
+        gridwidth=0.5,
+        gridcolor="rgba(80,80,80,0.5)",
+        zeroline=False,
+        title_font=dict(color="#FFFFFF"),
+        tickfont=dict(color="#FFFFFF"),
+    )
+
+    fig.update_yaxes(
+        title="Price",
+        showgrid=True,
+        gridwidth=0.5,
+        gridcolor="rgba(80,80,80,0.5)",
+        zeroline=False,
+        title_font=dict(color="#FFFFFF"),
+        tickfont=dict(color="#FFFFFF"),
     )
 
     return fig
