@@ -1,19 +1,13 @@
+import pandas as pd
+import numpy as np
+
+
 def calculate_tdsequential(df, stock_name="AAPL"):
     """
-    Calculate TD Sequential indicators from OHLC data, including countdown cancel points.
-    Now properly handles opposite setups during active countdowns by resetting and starting new countdown.
-
-    Parameters:
-    -----------
-    df : pandas.DataFrame
-        DataFrame with columns 'open', 'high', 'low', 'close', and 'date'
-    stock_name : str, optional
-        Name of the stock for display purposes
-
-    Returns:
-    --------
-    pandas.DataFrame
-        DataFrame with added TD Sequential columns
+    Calculate TD Sequential indicators with proper TDST level cancellation handling.
+    TDST levels are cancelled when:
+    1. For buy setups: When price closes above the buy TDST level
+    2. For sell setups: When price closes below the sell TDST level
     """
     # Make a copy to avoid modifying the original
     df = df.copy()
@@ -44,10 +38,29 @@ def calculate_tdsequential(df, stock_name="AAPL"):
     df["buy_setup"] = 0
     df["sell_setup"] = 0
 
-    # Calculate Buy and Sell Setup Phases
+    # Initialize TDST level columns
+    df["buy_tdst_level"] = np.nan
+    df["sell_tdst_level"] = np.nan
+    df["buy_tdst_active"] = False
+    df["sell_tdst_active"] = False
+
+    # Track current active TDST levels
+    current_buy_tdst = None
+    current_sell_tdst = None
+
+    # Calculate Buy and Sell Setup Phases with TDST levels
     for i in range(len(df)):
         if i == 0:
             continue
+
+        # Check for TDST cancellation conditions before processing new setups
+        if current_buy_tdst is not None and df["close"].iloc[i] > current_buy_tdst:
+            current_buy_tdst = None
+            df.loc[df.index[i], "buy_tdst_active"] = False
+
+        if current_sell_tdst is not None and df["close"].iloc[i] < current_sell_tdst:
+            current_sell_tdst = None
+            df.loc[df.index[i], "sell_tdst_active"] = False
 
         # Buy Setup
         if df["buy_setup_condition"].iloc[i]:
@@ -73,6 +86,56 @@ def calculate_tdsequential(df, stock_name="AAPL"):
         else:
             df.loc[df.index[i], "sell_setup"] = 0
 
+        # Calculate TDST levels when setup completes
+        if df["buy_setup"].iloc[i] == 9:
+            # TDST for buy setup is the highest high of the setup
+            setup_start = max(0, i - 8)
+            current_buy_tdst = df["high"].iloc[setup_start : i + 1].max()
+            df.loc[df.index[i], "buy_tdst_level"] = current_buy_tdst
+            df.loc[df.index[i], "buy_tdst_active"] = True
+
+        if df["sell_setup"].iloc[i] == 9:
+            # TDST for sell setup is the lowest low of the setup
+            setup_start = max(0, i - 8)
+            current_sell_tdst = df["low"].iloc[setup_start : i + 1].min()
+            df.loc[df.index[i], "sell_tdst_level"] = current_sell_tdst
+            df.loc[df.index[i], "sell_tdst_active"] = True
+
+    # Forward fill TDST levels until cancellation or new setup
+    buy_tdst_active = False
+    sell_tdst_active = False
+    last_buy_tdst = None
+    last_sell_tdst = None
+
+    for i in range(len(df)):
+        # Check for new TDST levels
+        if not pd.isna(df["buy_tdst_level"].iloc[i]):
+            buy_tdst_active = True
+            last_buy_tdst = df["buy_tdst_level"].iloc[i]
+
+        if not pd.isna(df["sell_tdst_level"].iloc[i]):
+            sell_tdst_active = True
+            last_sell_tdst = df["sell_tdst_level"].iloc[i]
+
+        # Check cancellation conditions
+        if buy_tdst_active and df["close"].iloc[i] > last_buy_tdst:
+            buy_tdst_active = False
+            df.loc[df.index[i], "buy_tdst_active"] = False
+
+        if sell_tdst_active and df["close"].iloc[i] < last_sell_tdst:
+            sell_tdst_active = False
+            df.loc[df.index[i], "sell_tdst_active"] = False
+
+        # Forward fill active TDST levels
+        if buy_tdst_active:
+            df.loc[df.index[i], "buy_tdst_level"] = last_buy_tdst
+            df.loc[df.index[i], "buy_tdst_active"] = True
+
+        if sell_tdst_active:
+            df.loc[df.index[i], "sell_tdst_level"] = last_sell_tdst
+            df.loc[df.index[i], "sell_tdst_active"] = True
+
+    # [Rest of the function remains the same...]
     # Add perfect 9 setup columns
     df["perfect_buy_9"] = 0
     df["perfect_sell_9"] = 0
@@ -162,7 +225,7 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             # Mark countdown as active in dataframe
             df.loc[df.index[i], "buy_countdown_active"] = 1
 
-            # Check for countdown cancel condition
+            # Check for countdown cancel condition (close above TDST)
             if buy_tdst_level is not None and df["close"].iloc[i] > buy_tdst_level:
                 # Cancel the buy countdown
                 buy_countdown_active = False
@@ -202,7 +265,7 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             # Mark countdown as active in dataframe
             df.loc[df.index[i], "sell_countdown_active"] = 1
 
-            # Check for countdown cancel condition
+            # Check for countdown cancel condition (close below TDST)
             if sell_tdst_level is not None and df["close"].iloc[i] < sell_tdst_level:
                 # Cancel the sell countdown
                 sell_countdown_active = False
@@ -247,3 +310,4 @@ def calculate_tdsequential(df, stock_name="AAPL"):
         df["stock_name"] = stock_name
 
     return df
+
