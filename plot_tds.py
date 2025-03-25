@@ -7,8 +7,10 @@ from plotly.subplots import make_subplots
 def plot_tdsequential(df, stock_name=None, window=100):
     """
     Plot TD Sequential indicators on a candlestick chart with TDST levels and improved readability.
+    Now includes setup stop loss levels (buy and sell) with distinct colors.
+
     Shows all setup numbers (1-9) above candlesticks and only first occurrence of countdown numbers (1-13) below candlesticks.
-    Displays TDST levels as discontinuous horizontal lines.
+    Displays TDST levels and setup stop levels as discontinuous horizontal lines.
 
     Parameters:
     -----------
@@ -169,6 +171,105 @@ def plot_tdsequential(df, stock_name=None, window=100):
                 )
             )
 
+    # Add Buy Setup Stop levels as discontinuous lines (using purple)
+    if (
+        "buy_setup_stop" in plot_df.columns
+        and "buy_setup_stop_active" in plot_df.columns
+    ):
+        # Process buy stop levels (support)
+        buy_stop_segments = []
+        current_segment = None
+
+        for i, row in plot_df.iterrows():
+            if row["buy_setup_stop_active"]:
+                if current_segment is None:
+                    current_segment = {
+                        "start": i,
+                        "end": i,
+                        "level": row["buy_setup_stop"],
+                    }
+                else:
+                    if row["buy_setup_stop"] == current_segment["level"]:
+                        current_segment["end"] = i
+                    else:
+                        buy_stop_segments.append(current_segment)
+                        current_segment = {
+                            "start": i,
+                            "end": i,
+                            "level": row["buy_setup_stop"],
+                        }
+            else:
+                if current_segment is not None:
+                    buy_stop_segments.append(current_segment)
+                    current_segment = None
+
+        if current_segment is not None:
+            buy_stop_segments.append(current_segment)
+
+        for segment in buy_stop_segments:
+            fig.add_trace(
+                go.Scatter(
+                    x=[segment["start"], segment["end"]],
+                    y=[segment["level"], segment["level"]],
+                    mode="lines",
+                    line=dict(
+                        color="rgba(128,0,128,0.7)", width=1, dash="dash"
+                    ),  # Purple
+                    name="Buy Stop",
+                    showlegend=False,
+                    hoverinfo="y+name",
+                )
+            )
+
+    # Add Sell Setup Stop levels as discontinuous lines (using orange)
+    if (
+        "sell_setup_stop" in plot_df.columns
+        and "sell_setup_stop_active" in plot_df.columns
+    ):
+        # Process sell stop levels (resistance)
+        sell_stop_segments = []
+        current_segment = None
+
+        for i, row in plot_df.iterrows():
+            if row["sell_setup_stop_active"]:
+                if current_segment is None:
+                    current_segment = {
+                        "start": i,
+                        "end": i,
+                        "level": row["sell_setup_stop"],
+                    }
+                else:
+                    if row["sell_setup_stop"] == current_segment["level"]:
+                        current_segment["end"] = i
+                    else:
+                        sell_stop_segments.append(current_segment)
+                        current_segment = {
+                            "start": i,
+                            "end": i,
+                            "level": row["sell_setup_stop"],
+                        }
+            else:
+                if current_segment is not None:
+                    sell_stop_segments.append(current_segment)
+                    current_segment = None
+
+        if current_segment is not None:
+            sell_stop_segments.append(current_segment)
+
+        for segment in sell_stop_segments:
+            fig.add_trace(
+                go.Scatter(
+                    x=[segment["start"], segment["end"]],
+                    y=[segment["level"], segment["level"]],
+                    mode="lines",
+                    line=dict(
+                        color="rgba(255,165,0,0.7)", width=1, dash="dash"
+                    ),  # Orange
+                    name="Sell Stop",
+                    showlegend=False,
+                    hoverinfo="y+name",
+                )
+            )
 
     # Add Buy Setup annotations (above candlesticks)
     for i, row in plot_df.iterrows():
@@ -332,20 +433,22 @@ def plot_tdsequential(df, stock_name=None, window=100):
         x0=0.01,
         y0=0.01,
         x1=0.3,
-        y1=0.12,
+        y1=0.15,
         fillcolor="rgba(40,40,40,0.9)",  # Dark background for legend
         line=dict(color="#555555", width=1),
         layer="below",
     )
 
-    # Add clearer, color-coded legend text
+    # Add clearer, color-coded legend text including stop levels with new colors
     legend_texts = [
-        ("BUY SETUP (1-9)", "rgb(0,168,107)", 0.025, 0.095),
-        ("SELL SETUP (1-9)", "rgb(220,39,39)", 0.025, 0.075),
-        ("BUY COUNTDOWN (1-13)", "rgb(0,168,107)", 0.025, 0.055),
-        ("SELL COUNTDOWN (1-13)", "rgb(220,39,39)", 0.025, 0.035),
-        ("BUY TDST (Resistance)", "rgba(0,168,107,0.7)", 0.025, 0.015),
-        ("SELL TDST (Support)", "rgba(220,39,39,0.7)", 0.025, -0.005),
+        ("BUY SETUP (1-9)", "rgb(0,168,107)", 0.025, 0.135),
+        ("SELL SETUP (1-9)", "rgb(220,39,39)", 0.025, 0.115),
+        ("BUY COUNTDOWN (1-13)", "rgb(0,168,107)", 0.025, 0.095),
+        ("SELL COUNTDOWN (1-13)", "rgb(220,39,39)", 0.025, 0.075),
+        ("BUY TDST (Resistance)", "rgba(0,168,107,0.7)", 0.025, 0.055),
+        ("SELL TDST (Support)", "rgba(220,39,39,0.7)", 0.025, 0.035),
+        ("BUY STOP (Support)", "rgba(128,0,128,0.7)", 0.025, 0.015),  # Purple
+        ("SELL STOP (Resistance)", "rgba(255,165,0,0.7)", 0.025, -0.005),  # Orange
     ]
 
     for text, color, x, y in legend_texts:
@@ -398,3 +501,4 @@ def plot_tdsequential(df, stock_name=None, window=100):
     )
 
     return fig
+
