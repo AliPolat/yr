@@ -4,7 +4,13 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 
-def plot_tdsequential(df, stock_name=None, window=100):
+def plot_tdsequential(
+    df,
+    stock_name=None,
+    window=100,
+    show_support_resistance=True,
+    show_setup_stop_loss=True,
+):
     """
     Plot TD Sequential indicators on a candlestick chart with TDST levels and improved readability.
     Now includes setup stop loss levels (buy and sell) with distinct colors.
@@ -20,6 +26,10 @@ def plot_tdsequential(df, stock_name=None, window=100):
         Name of the stock for the chart title
     window : int, optional
         Number of bars to display, default is 100
+    show_support_resistance : bool, optional
+        Whether to show TDST support/resistance levels, default is True
+    show_setup_stop_loss : bool, optional
+        Whether to show setup stop loss levels, default is True
 
     Returns:
     --------
@@ -82,194 +92,199 @@ def plot_tdsequential(df, stock_name=None, window=100):
             annotation_positions[key] = y_position
         return y_position
 
-    # Add TDST levels as discontinuous lines with proper cancellation
-    if "buy_tdst_level" in plot_df.columns and "buy_tdst_active" in plot_df.columns:
-        # Process buy TDST levels (resistance)
-        buy_tdst_segments = []
-        current_segment = None
+    # Add TDST levels as discontinuous lines with proper cancellation (if enabled)
+    if show_support_resistance:
+        if "buy_tdst_level" in plot_df.columns and "buy_tdst_active" in plot_df.columns:
+            # Process buy TDST levels (resistance)
+            buy_tdst_segments = []
+            current_segment = None
 
-        for i, row in plot_df.iterrows():
-            if row["buy_tdst_active"]:
-                if current_segment is None:
-                    current_segment = {
-                        "start": i,
-                        "end": i,
-                        "level": row["buy_tdst_level"],
-                    }
-                else:
-                    if row["buy_tdst_level"] == current_segment["level"]:
-                        current_segment["end"] = i
-                    else:
-                        buy_tdst_segments.append(current_segment)
+            for i, row in plot_df.iterrows():
+                if row["buy_tdst_active"]:
+                    if current_segment is None:
                         current_segment = {
                             "start": i,
                             "end": i,
                             "level": row["buy_tdst_level"],
                         }
-            else:
-                if current_segment is not None:
-                    buy_tdst_segments.append(current_segment)
-                    current_segment = None
-
-        if current_segment is not None:
-            buy_tdst_segments.append(current_segment)
-
-        for segment in buy_tdst_segments:
-            fig.add_trace(
-                go.Scatter(
-                    x=[segment["start"], segment["end"]],
-                    y=[segment["level"], segment["level"]],
-                    mode="lines",
-                    line=dict(color="rgba(0,168,107,0.7)", width=1, dash="dot"),
-                    name="Buy TDST",
-                    showlegend=False,
-                    hoverinfo="y+name",
-                )
-            )
-
-    if "sell_tdst_level" in plot_df.columns and "sell_tdst_active" in plot_df.columns:
-        # Process sell TDST levels (support)
-        sell_tdst_segments = []
-        current_segment = None
-
-        for i, row in plot_df.iterrows():
-            if row["sell_tdst_active"]:
-                if current_segment is None:
-                    current_segment = {
-                        "start": i,
-                        "end": i,
-                        "level": row["sell_tdst_level"],
-                    }
-                else:
-                    if row["sell_tdst_level"] == current_segment["level"]:
-                        current_segment["end"] = i
                     else:
-                        sell_tdst_segments.append(current_segment)
+                        if row["buy_tdst_level"] == current_segment["level"]:
+                            current_segment["end"] = i
+                        else:
+                            buy_tdst_segments.append(current_segment)
+                            current_segment = {
+                                "start": i,
+                                "end": i,
+                                "level": row["buy_tdst_level"],
+                            }
+                else:
+                    if current_segment is not None:
+                        buy_tdst_segments.append(current_segment)
+                        current_segment = None
+
+            if current_segment is not None:
+                buy_tdst_segments.append(current_segment)
+
+            for segment in buy_tdst_segments:
+                fig.add_trace(
+                    go.Scatter(
+                        x=[segment["start"], segment["end"]],
+                        y=[segment["level"], segment["level"]],
+                        mode="lines",
+                        line=dict(color="rgba(0,168,107,0.7)", width=1, dash="dot"),
+                        name="Buy TDST",
+                        showlegend=False,
+                        hoverinfo="y+name",
+                    )
+                )
+
+        if (
+            "sell_tdst_level" in plot_df.columns
+            and "sell_tdst_active" in plot_df.columns
+        ):
+            # Process sell TDST levels (support)
+            sell_tdst_segments = []
+            current_segment = None
+
+            for i, row in plot_df.iterrows():
+                if row["sell_tdst_active"]:
+                    if current_segment is None:
                         current_segment = {
                             "start": i,
                             "end": i,
                             "level": row["sell_tdst_level"],
                         }
-            else:
-                if current_segment is not None:
-                    sell_tdst_segments.append(current_segment)
-                    current_segment = None
-
-        if current_segment is not None:
-            sell_tdst_segments.append(current_segment)
-
-        for segment in sell_tdst_segments:
-            fig.add_trace(
-                go.Scatter(
-                    x=[segment["start"], segment["end"]],
-                    y=[segment["level"], segment["level"]],
-                    mode="lines",
-                    line=dict(color="rgba(220,39,39,0.7)", width=1, dash="dot"),
-                    name="Sell TDST",
-                    showlegend=False,
-                    hoverinfo="y+name",
-                )
-            )
-
-    # Add Buy Setup Stop levels as discontinuous lines (using purple)
-    if (
-        "buy_setup_stop" in plot_df.columns
-        and "buy_setup_stop_active" in plot_df.columns
-    ):
-        # Process buy stop levels (support)
-        buy_stop_segments = []
-        current_segment = None
-
-        for i, row in plot_df.iterrows():
-            if row["buy_setup_stop_active"]:
-                if current_segment is None:
-                    current_segment = {
-                        "start": i,
-                        "end": i,
-                        "level": row["buy_setup_stop"],
-                    }
-                else:
-                    if row["buy_setup_stop"] == current_segment["level"]:
-                        current_segment["end"] = i
                     else:
-                        buy_stop_segments.append(current_segment)
+                        if row["sell_tdst_level"] == current_segment["level"]:
+                            current_segment["end"] = i
+                        else:
+                            sell_tdst_segments.append(current_segment)
+                            current_segment = {
+                                "start": i,
+                                "end": i,
+                                "level": row["sell_tdst_level"],
+                            }
+                else:
+                    if current_segment is not None:
+                        sell_tdst_segments.append(current_segment)
+                        current_segment = None
+
+            if current_segment is not None:
+                sell_tdst_segments.append(current_segment)
+
+            for segment in sell_tdst_segments:
+                fig.add_trace(
+                    go.Scatter(
+                        x=[segment["start"], segment["end"]],
+                        y=[segment["level"], segment["level"]],
+                        mode="lines",
+                        line=dict(color="rgba(220,39,39,0.7)", width=1, dash="dot"),
+                        name="Sell TDST",
+                        showlegend=False,
+                        hoverinfo="y+name",
+                    )
+                )
+
+    # Add Buy Setup Stop levels as discontinuous lines (if enabled)
+    if show_setup_stop_loss:
+        if (
+            "buy_setup_stop" in plot_df.columns
+            and "buy_setup_stop_active" in plot_df.columns
+        ):
+            # Process buy stop levels (support)
+            buy_stop_segments = []
+            current_segment = None
+
+            for i, row in plot_df.iterrows():
+                if row["buy_setup_stop_active"]:
+                    if current_segment is None:
                         current_segment = {
                             "start": i,
                             "end": i,
                             "level": row["buy_setup_stop"],
                         }
-            else:
-                if current_segment is not None:
-                    buy_stop_segments.append(current_segment)
-                    current_segment = None
-
-        if current_segment is not None:
-            buy_stop_segments.append(current_segment)
-
-        for segment in buy_stop_segments:
-            fig.add_trace(
-                go.Scatter(
-                    x=[segment["start"], segment["end"]],
-                    y=[segment["level"], segment["level"]],
-                    mode="lines",
-                    line=dict(
-                        color="rgba(128,0,128,0.7)", width=1, dash="dash"
-                    ),  # Purple
-                    name="Buy Stop",
-                    showlegend=False,
-                    hoverinfo="y+name",
-                )
-            )
-
-    # Add Sell Setup Stop levels as discontinuous lines (using orange)
-    if (
-        "sell_setup_stop" in plot_df.columns
-        and "sell_setup_stop_active" in plot_df.columns
-    ):
-        # Process sell stop levels (resistance)
-        sell_stop_segments = []
-        current_segment = None
-
-        for i, row in plot_df.iterrows():
-            if row["sell_setup_stop_active"]:
-                if current_segment is None:
-                    current_segment = {
-                        "start": i,
-                        "end": i,
-                        "level": row["sell_setup_stop"],
-                    }
-                else:
-                    if row["sell_setup_stop"] == current_segment["level"]:
-                        current_segment["end"] = i
                     else:
-                        sell_stop_segments.append(current_segment)
+                        if row["buy_setup_stop"] == current_segment["level"]:
+                            current_segment["end"] = i
+                        else:
+                            buy_stop_segments.append(current_segment)
+                            current_segment = {
+                                "start": i,
+                                "end": i,
+                                "level": row["buy_setup_stop"],
+                            }
+                else:
+                    if current_segment is not None:
+                        buy_stop_segments.append(current_segment)
+                        current_segment = None
+
+            if current_segment is not None:
+                buy_stop_segments.append(current_segment)
+
+            for segment in buy_stop_segments:
+                fig.add_trace(
+                    go.Scatter(
+                        x=[segment["start"], segment["end"]],
+                        y=[segment["level"], segment["level"]],
+                        mode="lines",
+                        line=dict(
+                            color="rgba(128,0,128,0.7)", width=1, dash="dash"
+                        ),  # Purple
+                        name="Buy Stop",
+                        showlegend=False,
+                        hoverinfo="y+name",
+                    )
+                )
+
+        # Add Sell Setup Stop levels as discontinuous lines (using orange)
+        if (
+            "sell_setup_stop" in plot_df.columns
+            and "sell_setup_stop_active" in plot_df.columns
+        ):
+            # Process sell stop levels (resistance)
+            sell_stop_segments = []
+            current_segment = None
+
+            for i, row in plot_df.iterrows():
+                if row["sell_setup_stop_active"]:
+                    if current_segment is None:
                         current_segment = {
                             "start": i,
                             "end": i,
                             "level": row["sell_setup_stop"],
                         }
-            else:
-                if current_segment is not None:
-                    sell_stop_segments.append(current_segment)
-                    current_segment = None
+                    else:
+                        if row["sell_setup_stop"] == current_segment["level"]:
+                            current_segment["end"] = i
+                        else:
+                            sell_stop_segments.append(current_segment)
+                            current_segment = {
+                                "start": i,
+                                "end": i,
+                                "level": row["sell_setup_stop"],
+                            }
+                else:
+                    if current_segment is not None:
+                        sell_stop_segments.append(current_segment)
+                        current_segment = None
 
-        if current_segment is not None:
-            sell_stop_segments.append(current_segment)
+            if current_segment is not None:
+                sell_stop_segments.append(current_segment)
 
-        for segment in sell_stop_segments:
-            fig.add_trace(
-                go.Scatter(
-                    x=[segment["start"], segment["end"]],
-                    y=[segment["level"], segment["level"]],
-                    mode="lines",
-                    line=dict(
-                        color="rgba(255,165,0,0.7)", width=1, dash="dash"
-                    ),  # Orange
-                    name="Sell Stop",
-                    showlegend=False,
-                    hoverinfo="y+name",
+            for segment in sell_stop_segments:
+                fig.add_trace(
+                    go.Scatter(
+                        x=[segment["start"], segment["end"]],
+                        y=[segment["level"], segment["level"]],
+                        mode="lines",
+                        line=dict(
+                            color="rgba(255,165,0,0.7)", width=1, dash="dash"
+                        ),  # Orange
+                        name="Sell Stop",
+                        showlegend=False,
+                        hoverinfo="y+name",
+                    )
                 )
-            )
 
     # Add Buy Setup annotations (above candlesticks)
     for i, row in plot_df.iterrows():
@@ -445,11 +460,30 @@ def plot_tdsequential(df, stock_name=None, window=100):
         ("SELL SETUP (1-9)", "rgb(220,39,39)", 0.025, 0.115),
         ("BUY COUNTDOWN (1-13)", "rgb(0,168,107)", 0.025, 0.095),
         ("SELL COUNTDOWN (1-13)", "rgb(220,39,39)", 0.025, 0.075),
-        ("BUY TDST (Resistance)", "rgba(0,168,107,0.7)", 0.025, 0.055),
-        ("SELL TDST (Support)", "rgba(220,39,39,0.7)", 0.025, 0.035),
-        ("BUY STOP (Support)", "rgba(128,0,128,0.7)", 0.025, 0.015),  # Purple
-        ("SELL STOP (Resistance)", "rgba(255,165,0,0.7)", 0.025, -0.005),  # Orange
     ]
+
+    # Only add TDST levels to legend if enabled
+    if show_support_resistance:
+        legend_texts.extend(
+            [
+                ("BUY TDST (Resistance)", "rgba(0,168,107,0.7)", 0.025, 0.055),
+                ("SELL TDST (Support)", "rgba(220,39,39,0.7)", 0.025, 0.035),
+            ]
+        )
+
+    # Only add stop levels to legend if enabled
+    if show_setup_stop_loss:
+        legend_texts.extend(
+            [
+                ("BUY STOP (Support)", "rgba(128,0,128,0.7)", 0.025, 0.015),  # Purple
+                (
+                    "SELL STOP (Resistance)",
+                    "rgba(255,165,0,0.7)",
+                    0.025,
+                    -0.005,
+                ),  # Orange
+            ]
+        )
 
     for text, color, x, y in legend_texts:
         fig.add_annotation(

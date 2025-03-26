@@ -8,7 +8,6 @@ from plot_tds import plot_tdsequential
 
 # Define functions first, before the Streamlit interface code
 
-
 def get_stock_data(ticker, start_date, end_date, interval):
     """Download stock data using yfinance and fix column names"""
     try:
@@ -68,6 +67,19 @@ selected_interval = st.sidebar.selectbox(
     "Select Interval", interval_options, format_func=lambda x: interval_names[x]
 )
 
+# Add checkboxes for display options
+display_options = st.sidebar.expander("Display Options", expanded=True)
+show_support_resistance = display_options.checkbox(
+    "Display Support/Resistance",
+    value=True,
+    help="Show support and resistance levels on the chart",
+)
+show_setup_stop_loss = display_options.checkbox(
+    "Display Setup Stop Loss",
+    value=True,
+    help="Show stop loss levels for TD Sequential setups",
+)
+
 # Download button
 if st.sidebar.button("Download Data"):
     # Load data
@@ -85,12 +97,18 @@ if st.sidebar.button("Download Data"):
         td_data = calculate_tdsequential(data, stock_name=ticker)
 
         # Plot candlestick chart with TD Sequential indicators
-        fig = plot_tdsequential(td_data, stock_name=ticker, window=1000)
+        fig = plot_tdsequential(
+            td_data,
+            stock_name=ticker,
+            window=1000,
+            show_support_resistance=show_support_resistance,
+            show_setup_stop_loss=show_setup_stop_loss,
+        )
         st.plotly_chart(fig, use_container_width=True)
 
         # Display the dataframe
         st.subheader("Data Table")
-        display_cols = ["Open","High","Low","Close", "Volume"]
-        #st.dataframe(td_data[display_cols])
-
+        display_cols = ["Open", "High", "Low", "Close", "Volume"]
         st.dataframe(td_data)
+
+
