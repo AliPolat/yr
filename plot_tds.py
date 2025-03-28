@@ -14,6 +14,7 @@ def plot_tdsequential(
     """
     Plot TD Sequential indicators on a candlestick chart with TDST levels and improved readability.
     Now includes setup stop loss levels (buy and sell) with distinct colors.
+    Buy stop lines disappear when price closes below them, sell stop lines disappear when price closes above them.
 
     Shows all setup numbers (1-9) above candlesticks and only first occurrence of countdown numbers (1-13) below candlesticks.
     Displays TDST levels and setup stop levels as discontinuous horizontal lines.
@@ -197,6 +198,14 @@ def plot_tdsequential(
 
             for i, row in plot_df.iterrows():
                 if row["buy_setup_stop_active"]:
+                    # Check if price has closed below the stop level
+                    if row["close"] < row["buy_setup_stop"]:
+                        # If we have an active segment, close it
+                        if current_segment is not None:
+                            buy_stop_segments.append(current_segment)
+                            current_segment = None
+                        continue
+
                     if current_segment is None:
                         current_segment = {
                             "start": i,
@@ -247,6 +256,14 @@ def plot_tdsequential(
 
             for i, row in plot_df.iterrows():
                 if row["sell_setup_stop_active"]:
+                    # Check if price has closed above the stop level
+                    if row["close"] > row["sell_setup_stop"]:
+                        # If we have an active segment, close it
+                        if current_segment is not None:
+                            sell_stop_segments.append(current_segment)
+                            current_segment = None
+                        continue
+
                     if current_segment is None:
                         current_segment = {
                             "start": i,
@@ -535,4 +552,3 @@ def plot_tdsequential(
     )
 
     return fig
-
