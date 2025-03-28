@@ -114,8 +114,16 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             df.loc[df.index[i], "buy_tdst_level"] = current_buy_tdst
             df.loc[df.index[i], "buy_tdst_active"] = True
 
-            # Buy setup stop is the lowest low of the setup
+            # Original buy setup stop is the lowest low of the setup
             current_buy_stop = setup_bars["low"].min()
+
+            # Find the bar with the lowest low in the setup
+            min_low_bar = setup_bars[setup_bars["low"] == current_buy_stop].iloc[0]
+            # Calculate the range (high - low) of that bar
+            bar_range = min_low_bar["high"] - min_low_bar["low"]
+            # Subtract this range from the original stop level
+            current_buy_stop = current_buy_stop - bar_range
+
             df.loc[df.index[i], "buy_setup_stop"] = current_buy_stop
             df.loc[df.index[i], "buy_setup_stop_active"] = True
 
@@ -128,8 +136,16 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             df.loc[df.index[i], "sell_tdst_level"] = current_sell_tdst
             df.loc[df.index[i], "sell_tdst_active"] = True
 
-            # Sell setup stop is the highest high of the setup
+            # Original sell setup stop is the highest high of the setup
             current_sell_stop = setup_bars["high"].max()
+
+            # Find the bar with the highest high in the setup
+            max_high_bar = setup_bars[setup_bars["high"] == current_sell_stop].iloc[0]
+            # Calculate the range (high - low) of that bar
+            bar_range = max_high_bar["high"] - max_high_bar["low"]
+            # Add this range to the original stop level
+            current_sell_stop = current_sell_stop + bar_range
+
             df.loc[df.index[i], "sell_setup_stop"] = current_sell_stop
             df.loc[df.index[i], "sell_setup_stop_active"] = True
 
