@@ -5,15 +5,19 @@ import numpy as np
 def calculate_tdsequential(df, stock_name="AAPL"):
     """
     Calculate TD Sequential indicators with proper TDST level cancellation handling.
-    Now includes setup stop loss levels (buy and sell).
+    Now includes setup stop loss levels (buy and sell) with reactivation logic.
 
     TDST levels are cancelled when:
     1. For buy setups: When price closes above the buy TDST level
     2. For sell setups: When price closes below the sell TDST level
 
     Setup Stop Loss levels:
-    1. Buy Setup Stop Loss: Lowest low of the buy setup (bars 1-9)
-    2. Sell Setup Stop Loss: Highest high of the sell setup (bars 1-9)
+    1. Buy Setup Stop Loss: Lowest low of the buy setup (bars 1-9) minus the range of the lowest bar
+    2. Sell Setup Stop Loss: Highest high of the sell setup (bars 1-9) plus the range of the highest bar
+
+    Stop Loss Reactivation:
+    1. Buy stop: Reactivated if price moves back above the stop level after being canceled
+    2. Sell stop: Reactivated if price moves back below the stop level after being canceled
     """
     # Make a copy to avoid modifying the original
     df = df.copy()
@@ -62,23 +66,68 @@ def calculate_tdsequential(df, stock_name="AAPL"):
     current_buy_stop = None
     current_sell_stop = None
 
+    # Track inactive stop levels for potential reactivation
+    inactive_buy_stop = None
+    inactive_sell_stop = None
+
+    # Flag to track if stops have been triggered
+    buy_stop_triggered = False
+    sell_stop_triggered = False
+
     # Calculate Buy and Sell Setup Phases with TDST levels and stop levels
     for i in range(len(df)):
         if i == 0:
             continue
 
         # Check for TDST cancellation conditions before processing new setups
+        # Only cancel TDST levels, not stop levels
         if current_buy_tdst is not None and df["close"].iloc[i] > current_buy_tdst:
             current_buy_tdst = None
             df.loc[df.index[i], "buy_tdst_active"] = False
-            current_buy_stop = None
-            df.loc[df.index[i], "buy_setup_stop_active"] = False
 
         if current_sell_tdst is not None and df["close"].iloc[i] < current_sell_tdst:
             current_sell_tdst = None
             df.loc[df.index[i], "sell_tdst_active"] = False
+
+        # Check for stop loss cancellation conditions
+        # Buy setup stop loss is only canceled when price drops below the stop level
+        if current_buy_stop is not None and df["low"].iloc[i] <= current_buy_stop:
+            inactive_buy_stop = current_buy_stop  # Store for potential reactivation
+            current_buy_stop = None
+            df.loc[df.index[i], "buy_setup_stop_active"] = False
+            buy_stop_triggered = True
+
+        # Sell setup stop loss is only canceled when price rises above the stop level
+        if current_sell_stop is not None and df["high"].iloc[i] >= current_sell_stop:
+            inactive_sell_stop = current_sell_stop  # Store for potential reactivation
             current_sell_stop = None
             df.loc[df.index[i], "sell_setup_stop_active"] = False
+            sell_stop_triggered = True
+
+        # Check for stop loss reactivation conditions
+        # Buy stop reactivation: Price moves back above the stop level after stop was triggered
+        if (
+            inactive_buy_stop is not None
+            and buy_stop_triggered
+            and df["low"].iloc[i] > inactive_buy_stop
+        ):
+            current_buy_stop = inactive_buy_stop
+            df.loc[df.index[i], "buy_setup_stop"] = current_buy_stop
+            df.loc[df.index[i], "buy_setup_stop_active"] = True
+            inactive_buy_stop = None
+            buy_stop_triggered = False
+
+        # Sell stop reactivation: Price moves back below the stop level after stop was triggered
+        if (
+            inactive_sell_stop is not None
+            and sell_stop_triggered
+            and df["high"].iloc[i] < inactive_sell_stop
+        ):
+            current_sell_stop = inactive_sell_stop
+            df.loc[df.index[i], "sell_setup_stop"] = current_sell_stop
+            df.loc[df.index[i], "sell_setup_stop_active"] = True
+            inactive_sell_stop = None
+            sell_stop_triggered = False
 
         # Buy Setup
         if df["buy_setup_condition"].iloc[i]:
@@ -127,6 +176,10 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             df.loc[df.index[i], "buy_setup_stop"] = current_buy_stop
             df.loc[df.index[i], "buy_setup_stop_active"] = True
 
+            # Reset inactive stops and trigger flags when new setup completes
+            inactive_buy_stop = None
+            buy_stop_triggered = False
+
         if df["sell_setup"].iloc[i] == 9:
             setup_start = max(0, i - 8)
             setup_bars = df.iloc[setup_start : i + 1]
@@ -149,6 +202,10 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             df.loc[df.index[i], "sell_setup_stop"] = current_sell_stop
             df.loc[df.index[i], "sell_setup_stop_active"] = True
 
+            # Reset inactive stops and trigger flags when new setup completes
+            inactive_sell_stop = None
+            sell_stop_triggered = False
+
     # Forward fill TDST levels and stop levels until cancellation or new setup
     buy_tdst_active = False
     sell_tdst_active = False
@@ -159,43 +216,99 @@ def calculate_tdsequential(df, stock_name="AAPL"):
     last_buy_stop = None
     last_sell_stop = None
 
+    # Track inactive stop levels for potential reactivation in forward fill
+    inactive_buy_stop_ff = None
+    inactive_sell_stop_ff = None
+    buy_stop_triggered_ff = False
+    sell_stop_triggered_ff = False
+
     for i in range(len(df)):
         # Check for new TDST levels
         if not pd.isna(df["buy_tdst_level"].iloc[i]):
             buy_tdst_active = True
             last_buy_tdst = df["buy_tdst_level"].iloc[i]
+
+        if not pd.isna(df["buy_setup_stop"].iloc[i]):
             buy_stop_active = True
             last_buy_stop = df["buy_setup_stop"].iloc[i]
+            # Reset reactivation data when new stop is set
+            inactive_buy_stop_ff = None
+            buy_stop_triggered_ff = False
 
         if not pd.isna(df["sell_tdst_level"].iloc[i]):
             sell_tdst_active = True
             last_sell_tdst = df["sell_tdst_level"].iloc[i]
+
+        if not pd.isna(df["sell_setup_stop"].iloc[i]):
             sell_stop_active = True
             last_sell_stop = df["sell_setup_stop"].iloc[i]
+            # Reset reactivation data when new stop is set
+            inactive_sell_stop_ff = None
+            sell_stop_triggered_ff = False
 
-        # Check cancellation conditions
+        # Check cancellation conditions - Separate TDST and stop loss cancellations
+        # TDST cancellation
         if buy_tdst_active and df["close"].iloc[i] > last_buy_tdst:
             buy_tdst_active = False
             df.loc[df.index[i], "buy_tdst_active"] = False
-            buy_stop_active = False
-            df.loc[df.index[i], "buy_setup_stop_active"] = False
 
         if sell_tdst_active and df["close"].iloc[i] < last_sell_tdst:
             sell_tdst_active = False
             df.loc[df.index[i], "sell_tdst_active"] = False
+
+        # Stop loss cancellation
+        if buy_stop_active and df["low"].iloc[i] <= last_buy_stop:
+            buy_stop_active = False
+            df.loc[df.index[i], "buy_setup_stop_active"] = False
+            inactive_buy_stop_ff = last_buy_stop  # Store for potential reactivation
+            buy_stop_triggered_ff = True
+
+        if sell_stop_active and df["high"].iloc[i] >= last_sell_stop:
             sell_stop_active = False
             df.loc[df.index[i], "sell_setup_stop_active"] = False
+            inactive_sell_stop_ff = last_sell_stop  # Store for potential reactivation
+            sell_stop_triggered_ff = True
 
-        # Forward fill active TDST levels and stop levels
+        # Stop loss reactivation
+        if (
+            inactive_buy_stop_ff is not None
+            and buy_stop_triggered_ff
+            and df["low"].iloc[i] > inactive_buy_stop_ff
+        ):
+            buy_stop_active = True
+            last_buy_stop = inactive_buy_stop_ff
+            df.loc[df.index[i], "buy_setup_stop"] = last_buy_stop
+            df.loc[df.index[i], "buy_setup_stop_active"] = True
+            inactive_buy_stop_ff = None
+            buy_stop_triggered_ff = False
+
+        if (
+            inactive_sell_stop_ff is not None
+            and sell_stop_triggered_ff
+            and df["high"].iloc[i] < inactive_sell_stop_ff
+        ):
+            sell_stop_active = True
+            last_sell_stop = inactive_sell_stop_ff
+            df.loc[df.index[i], "sell_setup_stop"] = last_sell_stop
+            df.loc[df.index[i], "sell_setup_stop_active"] = True
+            inactive_sell_stop_ff = None
+            sell_stop_triggered_ff = False
+
+        # Forward fill active TDST levels
         if buy_tdst_active:
             df.loc[df.index[i], "buy_tdst_level"] = last_buy_tdst
             df.loc[df.index[i], "buy_tdst_active"] = True
-            df.loc[df.index[i], "buy_setup_stop"] = last_buy_stop
-            df.loc[df.index[i], "buy_setup_stop_active"] = True
 
         if sell_tdst_active:
             df.loc[df.index[i], "sell_tdst_level"] = last_sell_tdst
             df.loc[df.index[i], "sell_tdst_active"] = True
+
+        # Forward fill active stop levels
+        if buy_stop_active:
+            df.loc[df.index[i], "buy_setup_stop"] = last_buy_stop
+            df.loc[df.index[i], "buy_setup_stop_active"] = True
+
+        if sell_stop_active:
             df.loc[df.index[i], "sell_setup_stop"] = last_sell_stop
             df.loc[df.index[i], "sell_setup_stop_active"] = True
 
@@ -362,6 +475,44 @@ def calculate_tdsequential(df, stock_name="AAPL"):
                 # Keep the previous countdown value
                 if sell_countdown_bars:
                     df.loc[df.index[i], "sell_countdown"] = len(sell_countdown_bars)
+
+    # Add stop loss trigger and reactivation columns for analysis
+    df["buy_stop_triggered"] = False
+    df["sell_stop_triggered"] = False
+    df["buy_stop_reactivated"] = False
+    df["sell_stop_reactivated"] = False
+
+    # Identify where stops were triggered and reactivated
+    for i in range(1, len(df)):
+        # Detect stop triggering
+        if (
+            df["buy_setup_stop_active"].iloc[i - 1] == True
+            and df["buy_setup_stop_active"].iloc[i] == False
+            and not pd.isna(df["buy_setup_stop"].iloc[i - 1])
+        ):
+            df.loc[df.index[i], "buy_stop_triggered"] = True
+
+        if (
+            df["sell_setup_stop_active"].iloc[i - 1] == True
+            and df["sell_setup_stop_active"].iloc[i] == False
+            and not pd.isna(df["sell_setup_stop"].iloc[i - 1])
+        ):
+            df.loc[df.index[i], "sell_stop_triggered"] = True
+
+        # Detect stop reactivation
+        if (
+            df["buy_setup_stop_active"].iloc[i - 1] == False
+            and df["buy_setup_stop_active"].iloc[i] == True
+            and df["buy_setup"].iloc[i] != 9
+        ):  # Not a new setup
+            df.loc[df.index[i], "buy_stop_reactivated"] = True
+
+        if (
+            df["sell_setup_stop_active"].iloc[i - 1] == False
+            and df["sell_setup_stop_active"].iloc[i] == True
+            and df["sell_setup"].iloc[i] != 9
+        ):  # Not a new setup
+            df.loc[df.index[i], "sell_stop_reactivated"] = True
 
     # Clean up intermediate columns
     df = df.drop(
