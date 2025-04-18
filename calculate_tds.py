@@ -4,24 +4,61 @@ import numpy as np
 
 def calculate_tdsequential(df, stock_name="AAPL"):
     """
-    Calculate TD Sequential indicators with proper TDST level cancellation handling.
-    Now includes setup stop loss levels (buy and sell) with reactivation logic.
+    Calculate TD Sequential indicators with proper TDST level cancellation handling
+    and setup stop loss levels.
 
-    TDST levels are cancelled when:
-    1. For buy setups: When price closes above the buy TDST level
-    2. For sell setups: When price closes below the sell TDST level
+    Parameters:
+    -----------
+    df : pandas.DataFrame
+        DataFrame with OHLC data
+    stock_name : str, optional
+        Name of the stock
 
-    Setup Stop Loss levels:
-    1. Buy Setup Stop Loss: Lowest low of the buy setup (bars 1-9) minus the range of the lowest bar
-    2. Sell Setup Stop Loss: Highest high of the sell setup (bars 1-9) plus the range of the highest bar
-
-    Stop Loss Reactivation:
-    1. Buy stop: Reactivated if price moves back above the stop level after being canceled
-    2. Sell stop: Reactivated if price moves back below the stop level after being canceled
+    Returns:
+    --------
+    pandas.DataFrame
+        DataFrame with TD Sequential indicators added
     """
     # Make a copy to avoid modifying the original
     df = df.copy()
 
+    # Standardize and validate input data
+    df = _preprocess_dataframe(df)
+
+    # Calculate setup phases (buy and sell)
+    df = _calculate_setup_phases(df)
+
+    # Calculate TDST levels and setup stop loss levels
+    df = _calculate_tdst_and_stop_levels(df)
+
+    # Forward fill TDST levels and stop levels until cancellation or new setup
+    df = _forward_fill_levels(df)
+
+    # Identify perfect 9 setups
+    df = _identify_perfect_setups(df)
+
+    # Calculate countdown phases (buy and sell)
+    df = _calculate_countdown_phases(df)
+
+    # Identify stop loss triggers and reactivations
+    df = _identify_stop_events(df)
+
+    # Clean up intermediate columns
+    df = df.drop(
+        ["close_4_periods_ago", "buy_setup_condition", "sell_setup_condition"], axis=1
+    )
+
+    # Add stock name if provided
+    if stock_name:
+        df["stock_name"] = stock_name
+
+    return df
+
+
+def _preprocess_dataframe(df):
+    """
+    Standardize and validate the input dataframe.
+    """
     # Ensure columns are lowercase
     df.columns = [col.lower() for col in df.columns]
 
@@ -44,7 +81,7 @@ def calculate_tdsequential(df, stock_name="AAPL"):
     # Sell Setup: Current close greater than close 4 bars earlier
     df["sell_setup_condition"] = df["close"] > df["close_4_periods_ago"]
 
-    # Initialize setup counters to 0
+    # Initialize setup counters
     df["buy_setup"] = 0
     df["sell_setup"] = 0
 
@@ -60,75 +97,32 @@ def calculate_tdsequential(df, stock_name="AAPL"):
     df["buy_setup_stop_active"] = False
     df["sell_setup_stop_active"] = False
 
-    # Track current active TDST levels and stop levels
-    current_buy_tdst = None
-    current_sell_tdst = None
-    current_buy_stop = None
-    current_sell_stop = None
+    # Initialize countdown columns
+    df["buy_countdown"] = 0
+    df["sell_countdown"] = 0
+    df["buy_countdown_active"] = 0
+    df["sell_countdown_active"] = 0
+    df["perfect_buy_13"] = 0
+    df["perfect_sell_13"] = 0
 
-    # Track inactive stop levels for potential reactivation
-    inactive_buy_stop = None
-    inactive_sell_stop = None
+    # Initialize perfect setup columns
+    df["perfect_buy_9"] = 0
+    df["perfect_sell_9"] = 0
 
-    # Flag to track if stops have been triggered
-    buy_stop_triggered = False
-    sell_stop_triggered = False
+    # Initialize stop loss event columns
+    df["buy_stop_triggered"] = False
+    df["sell_stop_triggered"] = False
+    df["buy_stop_reactivated"] = False
+    df["sell_stop_reactivated"] = False
 
-    # Calculate Buy and Sell Setup Phases with TDST levels and stop levels
-    for i in range(len(df)):
-        if i == 0:
-            continue
+    return df
 
-        # Check for TDST cancellation conditions before processing new setups
-        # Only cancel TDST levels, not stop levels
-        if current_buy_tdst is not None and df["close"].iloc[i] > current_buy_tdst:
-            current_buy_tdst = None
-            df.loc[df.index[i], "buy_tdst_active"] = False
 
-        if current_sell_tdst is not None and df["close"].iloc[i] < current_sell_tdst:
-            current_sell_tdst = None
-            df.loc[df.index[i], "sell_tdst_active"] = False
-
-        # Check for stop loss cancellation conditions
-        # Buy setup stop loss is only canceled when price drops below the stop level
-        if current_buy_stop is not None and df["low"].iloc[i] <= current_buy_stop:
-            inactive_buy_stop = current_buy_stop  # Store for potential reactivation
-            current_buy_stop = None
-            df.loc[df.index[i], "buy_setup_stop_active"] = False
-            buy_stop_triggered = True
-
-        # Sell setup stop loss is only canceled when price rises above the stop level
-        if current_sell_stop is not None and df["high"].iloc[i] >= current_sell_stop:
-            inactive_sell_stop = current_sell_stop  # Store for potential reactivation
-            current_sell_stop = None
-            df.loc[df.index[i], "sell_setup_stop_active"] = False
-            sell_stop_triggered = True
-
-        # Check for stop loss reactivation conditions
-        # Buy stop reactivation: Price moves back above the stop level after stop was triggered
-        if (
-            inactive_buy_stop is not None
-            and buy_stop_triggered
-            and df["low"].iloc[i] > inactive_buy_stop
-        ):
-            current_buy_stop = inactive_buy_stop
-            df.loc[df.index[i], "buy_setup_stop"] = current_buy_stop
-            df.loc[df.index[i], "buy_setup_stop_active"] = True
-            inactive_buy_stop = None
-            buy_stop_triggered = False
-
-        # Sell stop reactivation: Price moves back below the stop level after stop was triggered
-        if (
-            inactive_sell_stop is not None
-            and sell_stop_triggered
-            and df["high"].iloc[i] < inactive_sell_stop
-        ):
-            current_sell_stop = inactive_sell_stop
-            df.loc[df.index[i], "sell_setup_stop"] = current_sell_stop
-            df.loc[df.index[i], "sell_setup_stop_active"] = True
-            inactive_sell_stop = None
-            sell_stop_triggered = False
-
+def _calculate_setup_phases(df):
+    """
+    Calculate Buy and Sell Setup phases.
+    """
+    for i in range(1, len(df)):
         # Buy Setup
         if df["buy_setup_condition"].iloc[i]:
             # Continue counting if previous bar was also part of buy setup
@@ -153,7 +147,74 @@ def calculate_tdsequential(df, stock_name="AAPL"):
         else:
             df.loc[df.index[i], "sell_setup"] = 0
 
-        # Calculate TDST levels and stop levels when setup completes
+    return df
+
+
+def _calculate_tdst_and_stop_levels(df):
+    """
+    Calculate TDST levels and setup stop loss levels when setups complete.
+    """
+    # Track current active TDST levels and stop levels
+    current_buy_tdst = None
+    current_sell_tdst = None
+    current_buy_stop = None
+    current_sell_stop = None
+
+    # Track inactive stop levels for potential reactivation
+    inactive_buy_stop = None
+    inactive_sell_stop = None
+
+    # Flag to track if stops have been triggered
+    buy_stop_triggered = False
+    sell_stop_triggered = False
+
+    for i in range(1, len(df)):
+        # Check for TDST cancellation conditions before processing new setups
+        if current_buy_tdst is not None and df["close"].iloc[i] > current_buy_tdst:
+            current_buy_tdst = None
+            df.loc[df.index[i], "buy_tdst_active"] = False
+
+        if current_sell_tdst is not None and df["close"].iloc[i] < current_sell_tdst:
+            current_sell_tdst = None
+            df.loc[df.index[i], "sell_tdst_active"] = False
+
+        # Check for stop loss cancellation conditions
+        if current_buy_stop is not None and df["low"].iloc[i] <= current_buy_stop:
+            inactive_buy_stop = current_buy_stop  # Store for potential reactivation
+            current_buy_stop = None
+            df.loc[df.index[i], "buy_setup_stop_active"] = False
+            buy_stop_triggered = True
+
+        if current_sell_stop is not None and df["high"].iloc[i] >= current_sell_stop:
+            inactive_sell_stop = current_sell_stop  # Store for potential reactivation
+            current_sell_stop = None
+            df.loc[df.index[i], "sell_setup_stop_active"] = False
+            sell_stop_triggered = True
+
+        # Check for stop loss reactivation conditions
+        if (
+            inactive_buy_stop is not None
+            and buy_stop_triggered
+            and df["low"].iloc[i] > inactive_buy_stop
+        ):
+            current_buy_stop = inactive_buy_stop
+            df.loc[df.index[i], "buy_setup_stop"] = current_buy_stop
+            df.loc[df.index[i], "buy_setup_stop_active"] = True
+            inactive_buy_stop = None
+            buy_stop_triggered = False
+
+        if (
+            inactive_sell_stop is not None
+            and sell_stop_triggered
+            and df["high"].iloc[i] < inactive_sell_stop
+        ):
+            current_sell_stop = inactive_sell_stop
+            df.loc[df.index[i], "sell_setup_stop"] = current_sell_stop
+            df.loc[df.index[i], "sell_setup_stop_active"] = True
+            inactive_sell_stop = None
+            sell_stop_triggered = False
+
+        # Calculate new levels when setup completes
         if df["buy_setup"].iloc[i] == 9:
             setup_start = max(0, i - 8)
             setup_bars = df.iloc[setup_start : i + 1]
@@ -163,16 +224,8 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             df.loc[df.index[i], "buy_tdst_level"] = current_buy_tdst
             df.loc[df.index[i], "buy_tdst_active"] = True
 
-            # Original buy setup stop is the lowest low of the setup
-            current_buy_stop = setup_bars["low"].min()
-
-            # Find the bar with the lowest low in the setup
-            min_low_bar = setup_bars[setup_bars["low"] == current_buy_stop].iloc[0]
-            # Calculate the range (high - low) of that bar
-            bar_range = min_low_bar["high"] - min_low_bar["low"]
-            # Subtract this range from the original stop level
-            current_buy_stop = current_buy_stop - bar_range
-
+            # Calculate buy setup stop level
+            current_buy_stop = _calculate_buy_stop_level(setup_bars)
             df.loc[df.index[i], "buy_setup_stop"] = current_buy_stop
             df.loc[df.index[i], "buy_setup_stop_active"] = True
 
@@ -189,16 +242,8 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             df.loc[df.index[i], "sell_tdst_level"] = current_sell_tdst
             df.loc[df.index[i], "sell_tdst_active"] = True
 
-            # Original sell setup stop is the highest high of the setup
-            current_sell_stop = setup_bars["high"].max()
-
-            # Find the bar with the highest high in the setup
-            max_high_bar = setup_bars[setup_bars["high"] == current_sell_stop].iloc[0]
-            # Calculate the range (high - low) of that bar
-            bar_range = max_high_bar["high"] - max_high_bar["low"]
-            # Add this range to the original stop level
-            current_sell_stop = current_sell_stop + bar_range
-
+            # Calculate sell setup stop level
+            current_sell_stop = _calculate_sell_stop_level(setup_bars)
             df.loc[df.index[i], "sell_setup_stop"] = current_sell_stop
             df.loc[df.index[i], "sell_setup_stop_active"] = True
 
@@ -206,7 +251,47 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             inactive_sell_stop = None
             sell_stop_triggered = False
 
-    # Forward fill TDST levels and stop levels until cancellation or new setup
+    return df
+
+
+def _calculate_buy_stop_level(setup_bars):
+    """
+    Calculate buy setup stop level: lowest low minus the range of the lowest bar.
+    """
+    # Original buy setup stop is the lowest low of the setup
+    buy_stop = setup_bars["low"].min()
+
+    # Find the bar with the lowest low in the setup
+    min_low_bar = setup_bars[setup_bars["low"] == buy_stop].iloc[0]
+
+    # Calculate the range (high - low) of that bar
+    bar_range = min_low_bar["high"] - min_low_bar["low"]
+
+    # Subtract this range from the original stop level
+    return buy_stop - bar_range
+
+
+def _calculate_sell_stop_level(setup_bars):
+    """
+    Calculate sell setup stop level: highest high plus the range of the highest bar.
+    """
+    # Original sell setup stop is the highest high of the setup
+    sell_stop = setup_bars["high"].max()
+
+    # Find the bar with the highest high in the setup
+    max_high_bar = setup_bars[setup_bars["high"] == sell_stop].iloc[0]
+
+    # Calculate the range (high - low) of that bar
+    bar_range = max_high_bar["high"] - max_high_bar["low"]
+
+    # Add this range to the original stop level
+    return sell_stop + bar_range
+
+
+def _forward_fill_levels(df):
+    """
+    Forward fill TDST levels and stop levels until cancellation or new setup.
+    """
     buy_tdst_active = False
     sell_tdst_active = False
     buy_stop_active = False
@@ -246,8 +331,7 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             inactive_sell_stop_ff = None
             sell_stop_triggered_ff = False
 
-        # Check cancellation conditions - Separate TDST and stop loss cancellations
-        # TDST cancellation
+        # Handle TDST cancellations
         if buy_tdst_active and df["close"].iloc[i] > last_buy_tdst:
             buy_tdst_active = False
             df.loc[df.index[i], "buy_tdst_active"] = False
@@ -256,7 +340,7 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             sell_tdst_active = False
             df.loc[df.index[i], "sell_tdst_active"] = False
 
-        # Stop loss cancellation
+        # Handle stop loss cancellations
         if buy_stop_active and df["low"].iloc[i] <= last_buy_stop:
             buy_stop_active = False
             df.loc[df.index[i], "buy_setup_stop_active"] = False
@@ -269,7 +353,7 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             inactive_sell_stop_ff = last_sell_stop  # Store for potential reactivation
             sell_stop_triggered_ff = True
 
-        # Stop loss reactivation
+        # Handle stop loss reactivation
         if (
             inactive_buy_stop_ff is not None
             and buy_stop_triggered_ff
@@ -312,11 +396,13 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             df.loc[df.index[i], "sell_setup_stop"] = last_sell_stop
             df.loc[df.index[i], "sell_setup_stop_active"] = True
 
-    # Add perfect 9 setup columns
-    df["perfect_buy_9"] = 0
-    df["perfect_sell_9"] = 0
+    return df
 
-    # Calculate perfect 9 setups correctly
+
+def _identify_perfect_setups(df):
+    """
+    Identify perfect 9 setups for both buy and sell.
+    """
     for i in range(2, len(df)):
         if df["buy_setup"].iloc[i] == 9:
             # Perfect Buy 9: Low of bar 9 < Low of bar 6
@@ -328,14 +414,13 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             if df["high"].iloc[i] > df["high"].iloc[i - 3]:
                 df.loc[df.index[i], "perfect_sell_9"] = 1
 
-    # Initialize countdown columns
-    df["buy_countdown"] = 0
-    df["sell_countdown"] = 0
-    df["buy_countdown_active"] = 0
-    df["sell_countdown_active"] = 0
-    df["perfect_buy_13"] = 0
-    df["perfect_sell_13"] = 0
+    return df
 
+
+def _calculate_countdown_phases(df):
+    """
+    Calculate TD Sequential countdown phases for both buy and sell.
+    """
     # Store indices of setup and countdown bars
     buy_countdown_bars = []
     sell_countdown_bars = []
@@ -352,137 +437,262 @@ def calculate_tdsequential(df, stock_name="AAPL"):
     buy_tdst_level = None
     sell_tdst_level = None
 
-    # Calculate countdowns
     for i in range(9, len(df)):
-        # Process buy side
-        # Check if this bar completes a buy setup (9 consecutive bars)
+        # Process buy side setup completion
         if df["buy_setup"].iloc[i] == 9:
-            # If sell countdown is active, reset it and start buy countdown
-            if sell_countdown_active:
-                sell_countdown_active = False
-                sell_countdown_bars = []
-                current_sell_setup_idx = None
-                sell_tdst_level = None
-                df.loc[df.index[i], "sell_countdown_active"] = 0
-                df.loc[df.index[i], "sell_countdown"] = 0
+            (
+                df,
+                buy_countdown_active,
+                buy_countdown_bars,
+                buy_tdst_level,
+                sell_countdown_active,
+                sell_countdown_bars,
+                current_buy_setup_idx,
+                current_sell_setup_idx,
+                sell_tdst_level,
+            ) = _handle_buy_setup_completion(
+                df,
+                i,
+                buy_countdown_active,
+                buy_countdown_bars,
+                buy_tdst_level,
+                sell_countdown_active,
+                sell_countdown_bars,
+                current_buy_setup_idx,
+                current_sell_setup_idx,
+                sell_tdst_level,
+            )
 
-            # Start a new buy countdown
-            buy_countdown_active = True
-            buy_countdown_bars = []
-            current_buy_setup_idx = i
-            df.loc[df.index[i], "buy_countdown_active"] = 1
-
-            # Set TDST level for buy countdown (highest high of the buy setup)
-            buy_tdst_level = df["high"].iloc[i - 8 : i + 1].max()
-
-        # Process sell side
-        # Check if this bar completes a sell setup (9 consecutive bars)
+        # Process sell side setup completion
         if df["sell_setup"].iloc[i] == 9:
-            # If buy countdown is active, reset it and start sell countdown
-            if buy_countdown_active:
-                buy_countdown_active = False
-                buy_countdown_bars = []
-                current_buy_setup_idx = None
-                buy_tdst_level = None
-                df.loc[df.index[i], "buy_countdown_active"] = 0
-                df.loc[df.index[i], "buy_countdown"] = 0
-
-            # Start a new sell countdown
-            sell_countdown_active = True
-            sell_countdown_bars = []
-            current_sell_setup_idx = i
-            df.loc[df.index[i], "sell_countdown_active"] = 1
-
-            # Set TDST level for sell countdown (lowest low of the sell setup)
-            sell_tdst_level = df["low"].iloc[i - 8 : i + 1].min()
+            (
+                df,
+                buy_countdown_active,
+                buy_countdown_bars,
+                buy_tdst_level,
+                sell_countdown_active,
+                sell_countdown_bars,
+                current_buy_setup_idx,
+                current_sell_setup_idx,
+                sell_tdst_level,
+            ) = _handle_sell_setup_completion(
+                df,
+                i,
+                buy_countdown_active,
+                buy_countdown_bars,
+                buy_tdst_level,
+                sell_countdown_active,
+                sell_countdown_bars,
+                current_buy_setup_idx,
+                current_sell_setup_idx,
+                sell_tdst_level,
+            )
 
         # Process Buy Countdown
         if buy_countdown_active:
-            # Mark countdown as active in dataframe
-            df.loc[df.index[i], "buy_countdown_active"] = 1
-
-            # Check for countdown cancel condition (close above TDST)
-            if buy_tdst_level is not None and df["close"].iloc[i] > buy_tdst_level:
-                # Cancel the buy countdown
-                buy_countdown_active = False
-                buy_countdown_bars = []
-                df.loc[df.index[i], "buy_countdown"] = 0  # Reset buy_countdown
-                continue
-
-            # Check for countdown qualifying bar: Close <= Low of 2 bars earlier
-            if i >= 2 and df["close"].iloc[i] <= df["low"].iloc[i - 2]:
-                # Add this bar to qualifying bars
-                buy_countdown_bars.append(i)
-
-                # Update countdown count
-                current_count = len(buy_countdown_bars)
-                df.loc[df.index[i], "buy_countdown"] = current_count
-
-                # Check for perfect 13 when we reach the 13th bar
-                if current_count == 13:
-                    # Get bar 8 of the countdown
-                    if len(buy_countdown_bars) >= 8:
-                        bar_8_idx = buy_countdown_bars[7]  # 8th bar (0-indexed)
-
-                        # Perfect Buy 13: Close of bar 13 ≤ Low of bar 8
-                        if df["close"].iloc[i] <= df["low"].iloc[bar_8_idx]:
-                            df.loc[df.index[i], "perfect_buy_13"] = 1
-
-                    # Reset countdown after reaching 13
-                    buy_countdown_active = False
-            else:
-                # Bar doesn't qualify, but countdown continues
-                # Keep the previous countdown value
-                if buy_countdown_bars:
-                    df.loc[df.index[i], "buy_countdown"] = len(buy_countdown_bars)
+            df, buy_countdown_active, buy_countdown_bars = _process_buy_countdown(
+                df, i, buy_countdown_active, buy_countdown_bars, buy_tdst_level
+            )
 
         # Process Sell Countdown
         if sell_countdown_active:
-            # Mark countdown as active in dataframe
-            df.loc[df.index[i], "sell_countdown_active"] = 1
+            df, sell_countdown_active, sell_countdown_bars = _process_sell_countdown(
+                df, i, sell_countdown_active, sell_countdown_bars, sell_tdst_level
+            )
 
-            # Check for countdown cancel condition (close below TDST)
-            if sell_tdst_level is not None and df["close"].iloc[i] < sell_tdst_level:
-                # Cancel the sell countdown
-                sell_countdown_active = False
-                sell_countdown_bars = []
-                df.loc[df.index[i], "sell_countdown"] = 0  # Reset sell_countdown
-                continue
+    return df
 
-            # Check for countdown qualifying bar: Close >= High of 2 bars earlier
-            if i >= 2 and df["close"].iloc[i] >= df["high"].iloc[i - 2]:
-                # Add this bar to qualifying bars
-                sell_countdown_bars.append(i)
 
-                # Update countdown count
-                current_count = len(sell_countdown_bars)
-                df.loc[df.index[i], "sell_countdown"] = current_count
+def _handle_buy_setup_completion(
+    df,
+    i,
+    buy_countdown_active,
+    buy_countdown_bars,
+    buy_tdst_level,
+    sell_countdown_active,
+    sell_countdown_bars,
+    current_buy_setup_idx,
+    current_sell_setup_idx,
+    sell_tdst_level,
+):
+    """
+    Handle the completion of a buy setup (9 consecutive bars).
+    """
+    # If sell countdown is active, reset it and start buy countdown
+    if sell_countdown_active:
+        sell_countdown_active = False
+        sell_countdown_bars = []
+        current_sell_setup_idx = None
+        sell_tdst_level = None
+        df.loc[df.index[i], "sell_countdown_active"] = 0
+        df.loc[df.index[i], "sell_countdown"] = 0
 
-                # Check for perfect 13 when we reach the 13th bar
-                if current_count == 13:
-                    # Get bar 8 of the countdown
-                    if len(sell_countdown_bars) >= 8:
-                        bar_8_idx = sell_countdown_bars[7]  # 8th bar (0-indexed)
+    # Start a new buy countdown
+    buy_countdown_active = True
+    buy_countdown_bars = []
+    current_buy_setup_idx = i
+    df.loc[df.index[i], "buy_countdown_active"] = 1
 
-                        # Perfect Sell 13: Close of bar 13 ≥ High of bar 8
-                        if df["close"].iloc[i] >= df["high"].iloc[bar_8_idx]:
-                            df.loc[df.index[i], "perfect_sell_13"] = 1
+    # Set TDST level for buy countdown (highest high of the buy setup)
+    buy_tdst_level = df["high"].iloc[i - 8 : i + 1].max()
 
-                    # Reset countdown after reaching 13
-                    sell_countdown_active = False
-            else:
-                # Bar doesn't qualify, but countdown continues
-                # Keep the previous countdown value
-                if sell_countdown_bars:
-                    df.loc[df.index[i], "sell_countdown"] = len(sell_countdown_bars)
+    return (
+        df,
+        buy_countdown_active,
+        buy_countdown_bars,
+        buy_tdst_level,
+        sell_countdown_active,
+        sell_countdown_bars,
+        current_buy_setup_idx,
+        current_sell_setup_idx,
+        sell_tdst_level,
+    )
 
-    # Add stop loss trigger and reactivation columns for analysis
-    df["buy_stop_triggered"] = False
-    df["sell_stop_triggered"] = False
-    df["buy_stop_reactivated"] = False
-    df["sell_stop_reactivated"] = False
 
-    # Identify where stops were triggered and reactivated
+def _handle_sell_setup_completion(
+    df,
+    i,
+    buy_countdown_active,
+    buy_countdown_bars,
+    buy_tdst_level,
+    sell_countdown_active,
+    sell_countdown_bars,
+    current_buy_setup_idx,
+    current_sell_setup_idx,
+    sell_tdst_level,
+):
+    """
+    Handle the completion of a sell setup (9 consecutive bars).
+    """
+    # If buy countdown is active, reset it and start sell countdown
+    if buy_countdown_active:
+        buy_countdown_active = False
+        buy_countdown_bars = []
+        current_buy_setup_idx = None
+        buy_tdst_level = None
+        df.loc[df.index[i], "buy_countdown_active"] = 0
+        df.loc[df.index[i], "buy_countdown"] = 0
+
+    # Start a new sell countdown
+    sell_countdown_active = True
+    sell_countdown_bars = []
+    current_sell_setup_idx = i
+    df.loc[df.index[i], "sell_countdown_active"] = 1
+
+    # Set TDST level for sell countdown (lowest low of the sell setup)
+    sell_tdst_level = df["low"].iloc[i - 8 : i + 1].min()
+
+    return (
+        df,
+        buy_countdown_active,
+        buy_countdown_bars,
+        buy_tdst_level,
+        sell_countdown_active,
+        sell_countdown_bars,
+        current_buy_setup_idx,
+        current_sell_setup_idx,
+        sell_tdst_level,
+    )
+
+
+def _process_buy_countdown(
+    df, i, buy_countdown_active, buy_countdown_bars, buy_tdst_level
+):
+    """
+    Process buy countdown at the current bar.
+    """
+    # Mark countdown as active in dataframe
+    df.loc[df.index[i], "buy_countdown_active"] = 1
+
+    # Check for countdown cancel condition (close above TDST)
+    if buy_tdst_level is not None and df["close"].iloc[i] > buy_tdst_level:
+        # Cancel the buy countdown
+        buy_countdown_active = False
+        buy_countdown_bars = []
+        df.loc[df.index[i], "buy_countdown"] = 0  # Reset buy_countdown
+        return df, buy_countdown_active, buy_countdown_bars
+
+    # Check for countdown qualifying bar: Close <= Low of 2 bars earlier
+    if i >= 2 and df["close"].iloc[i] <= df["low"].iloc[i - 2]:
+        # Add this bar to qualifying bars
+        buy_countdown_bars.append(i)
+
+        # Update countdown count
+        current_count = len(buy_countdown_bars)
+        df.loc[df.index[i], "buy_countdown"] = current_count
+
+        # Check for perfect 13 when we reach the 13th bar
+        if current_count == 13:
+            # Get bar 8 of the countdown
+            if len(buy_countdown_bars) >= 8:
+                bar_8_idx = buy_countdown_bars[7]  # 8th bar (0-indexed)
+
+                # Perfect Buy 13: Close of bar 13 ≤ Low of bar 8
+                if df["close"].iloc[i] <= df["low"].iloc[bar_8_idx]:
+                    df.loc[df.index[i], "perfect_buy_13"] = 1
+
+            # Reset countdown after reaching 13
+            buy_countdown_active = False
+    else:
+        # Bar doesn't qualify, but countdown continues
+        # Keep the previous countdown value
+        if buy_countdown_bars:
+            df.loc[df.index[i], "buy_countdown"] = len(buy_countdown_bars)
+
+    return df, buy_countdown_active, buy_countdown_bars
+
+
+def _process_sell_countdown(
+    df, i, sell_countdown_active, sell_countdown_bars, sell_tdst_level
+):
+    """
+    Process sell countdown at the current bar.
+    """
+    # Mark countdown as active in dataframe
+    df.loc[df.index[i], "sell_countdown_active"] = 1
+
+    # Check for countdown cancel condition (close below TDST)
+    if sell_tdst_level is not None and df["close"].iloc[i] < sell_tdst_level:
+        # Cancel the sell countdown
+        sell_countdown_active = False
+        sell_countdown_bars = []
+        df.loc[df.index[i], "sell_countdown"] = 0  # Reset sell_countdown
+        return df, sell_countdown_active, sell_countdown_bars
+
+    # Check for countdown qualifying bar: Close >= High of 2 bars earlier
+    if i >= 2 and df["close"].iloc[i] >= df["high"].iloc[i - 2]:
+        # Add this bar to qualifying bars
+        sell_countdown_bars.append(i)
+
+        # Update countdown count
+        current_count = len(sell_countdown_bars)
+        df.loc[df.index[i], "sell_countdown"] = current_count
+
+        # Check for perfect 13 when we reach the 13th bar
+        if current_count == 13:
+            # Get bar 8 of the countdown
+            if len(sell_countdown_bars) >= 8:
+                bar_8_idx = sell_countdown_bars[7]  # 8th bar (0-indexed)
+
+                # Perfect Sell 13: Close of bar 13 ≥ High of bar 8
+                if df["close"].iloc[i] >= df["high"].iloc[bar_8_idx]:
+                    df.loc[df.index[i], "perfect_sell_13"] = 1
+
+            # Reset countdown after reaching 13
+            sell_countdown_active = False
+    else:
+        # Bar doesn't qualify, but countdown continues
+        # Keep the previous countdown value
+        if sell_countdown_bars:
+            df.loc[df.index[i], "sell_countdown"] = len(sell_countdown_bars)
+
+    return df, sell_countdown_active, sell_countdown_bars
+
+
+def _identify_stop_events(df):
+    """
+    Identify where stop loss levels were triggered and reactivated.
+    """
     for i in range(1, len(df)):
         # Detect stop triggering
         if (
@@ -513,14 +723,5 @@ def calculate_tdsequential(df, stock_name="AAPL"):
             and df["sell_setup"].iloc[i] != 9
         ):  # Not a new setup
             df.loc[df.index[i], "sell_stop_reactivated"] = True
-
-    # Clean up intermediate columns
-    df = df.drop(
-        ["close_4_periods_ago", "buy_setup_condition", "sell_setup_condition"], axis=1
-    )
-
-    # Add stock name if provided
-    if stock_name:
-        df["stock_name"] = stock_name
 
     return df

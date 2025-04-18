@@ -13,9 +13,6 @@ def plot_tdsequential(
 ):
     """
     Plot TD Sequential indicators on a candlestick chart with TDST levels and improved readability.
-    Now includes setup stop loss levels (buy and sell) with distinct colors.
-    Buy stop lines disappear when price closes below them, sell stop lines disappear when price closes above them.
-
     Shows all setup numbers (1-9) above candlesticks and only first occurrence of countdown numbers (1-13) below candlesticks.
     Displays TDST levels and setup stop levels as discontinuous horizontal lines.
 
@@ -44,17 +41,54 @@ def plot_tdsequential(
         plot_df = df.copy()
 
     # Get date column or index for x-axis
-    if isinstance(plot_df.index, pd.DatetimeIndex):
-        x = plot_df.index
-    elif "date" in plot_df.columns:
-        x = plot_df["date"]
-    else:
-        x = np.arange(len(plot_df))
+    x = get_x_axis_values(plot_df)
 
     # Create a single subplot with more vertical space
     fig = make_subplots(rows=1, cols=1, vertical_spacing=0.02)
 
     # Add candlestick chart
+    add_candlestick_chart(fig, x, plot_df)
+
+    # Calculate price range for annotation positioning
+    price_range = plot_df["high"].max() - plot_df["low"].min()
+    annotation_params = calculate_annotation_parameters(price_range)
+
+    # Dictionary to track position conflicts (avoid overlapping annotations)
+    annotation_positions = {}
+
+    # Add TDST levels as discontinuous lines with proper cancellation (if enabled)
+    if show_support_resistance:
+        add_tdst_levels(fig, plot_df, x)
+
+    # Add Buy Setup Stop levels and Sell Setup Stop levels as discontinuous lines (if enabled)
+    if show_setup_stop_loss:
+        add_setup_stop_levels(fig, plot_df, x)
+
+    # Add Buy and Sell Setup annotations (above candlesticks)
+    add_setup_annotations(fig, plot_df, x, annotation_params, annotation_positions)
+
+    # Add Buy and Sell Countdown annotations (below candlesticks)
+    add_countdown_annotations(fig, plot_df, x, annotation_params, annotation_positions)
+
+    # Create a legend and add title
+    add_legend(fig, show_support_resistance, show_setup_stop_loss)
+    update_layout(fig, stock_name)
+
+    return fig
+
+
+def get_x_axis_values(plot_df):
+    """Extract the x-axis values from the dataframe"""
+    if isinstance(plot_df.index, pd.DatetimeIndex):
+        return plot_df.index
+    elif "date" in plot_df.columns:
+        return plot_df["date"]
+    else:
+        return np.arange(len(plot_df))
+
+
+def add_candlestick_chart(fig, x, plot_df):
+    """Add candlestick chart to the figure"""
     candlestick = go.Candlestick(
         x=x,
         open=plot_df["open"],
@@ -68,248 +102,225 @@ def plot_tdsequential(
     )
     fig.add_trace(candlestick)
 
-    # Calculate price range for annotation positioning
-    price_range = plot_df["high"].max() - plot_df["low"].min()
 
-    # Spacing for better readability
-    setup_offset = price_range * 0.02
-    countdown_offset = price_range * 0.02
-    signal_offset = price_range * 0.05
+def calculate_annotation_parameters(price_range):
+    """Calculate parameters for annotations based on price range"""
+    return {
+        "setup_offset": price_range * 0.02,
+        "countdown_offset": price_range * 0.02,
+        "signal_offset": price_range * 0.05,
+    }
 
-    # Dictionary to track position conflicts (avoid overlapping annotations)
-    annotation_positions = {}
 
-    # Function to handle potential annotation overlaps
-    def get_adjusted_position(idx, y_position, is_above):
-        key = (idx, is_above)
-        if key in annotation_positions:
-            # If this position is already taken, adjust by a small amount
-            if is_above:
-                y_position += setup_offset
-            else:
-                y_position -= countdown_offset
-            annotation_positions[key] = y_position
+def get_adjusted_position(idx, y_position, is_above, annotation_positions):
+    """Handle potential annotation overlaps"""
+    key = (idx, is_above)
+    if key in annotation_positions:
+        # If this position is already taken, adjust by a small amount
+        if is_above:
+            y_position += annotation_positions.get("setup_offset", 0)
         else:
-            annotation_positions[key] = y_position
-        return y_position
+            y_position -= annotation_positions.get("countdown_offset", 0)
+        annotation_positions[key] = y_position
+    else:
+        annotation_positions[key] = y_position
+    return y_position
 
-    # Add TDST levels as discontinuous lines with proper cancellation (if enabled)
-    if show_support_resistance:
-        if "buy_tdst_level" in plot_df.columns and "buy_tdst_active" in plot_df.columns:
-            # Process buy TDST levels (resistance)
-            buy_tdst_segments = []
-            current_segment = None
 
-            for i, row in plot_df.iterrows():
-                if row["buy_tdst_active"]:
-                    if current_segment is None:
-                        current_segment = {
-                            "start": i,
-                            "end": i,
-                            "level": row["buy_tdst_level"],
-                        }
-                    else:
-                        if row["buy_tdst_level"] == current_segment["level"]:
-                            current_segment["end"] = i
-                        else:
-                            buy_tdst_segments.append(current_segment)
-                            current_segment = {
-                                "start": i,
-                                "end": i,
-                                "level": row["buy_tdst_level"],
-                            }
-                else:
-                    if current_segment is not None:
-                        buy_tdst_segments.append(current_segment)
-                        current_segment = None
+def add_tdst_levels(fig, plot_df, x):
+    """Add TDST support and resistance levels to the figure"""
+    # Process buy TDST levels (resistance)
+    if "buy_tdst_level" in plot_df.columns and "buy_tdst_active" in plot_df.columns:
+        add_discontinuous_levels(
+            fig,
+            plot_df,
+            x,
+            level_column="buy_tdst_level",
+            active_column="buy_tdst_active",
+            color="rgba(0,168,107,0.7)",
+            name="Buy TDST",
+        )
 
+    # Process sell TDST levels (support)
+    if "sell_tdst_level" in plot_df.columns and "sell_tdst_active" in plot_df.columns:
+        add_discontinuous_levels(
+            fig,
+            plot_df,
+            x,
+            level_column="sell_tdst_level",
+            active_column="sell_tdst_active",
+            color="rgba(220,39,39,0.7)",
+            name="Sell TDST",
+        )
+
+
+def add_setup_stop_levels(fig, plot_df, x):
+    """Add setup stop loss levels to the figure"""
+    # Process buy stop levels (support)
+    if (
+        "buy_setup_stop" in plot_df.columns
+        and "buy_setup_stop_active" in plot_df.columns
+    ):
+        add_discontinuous_levels(
+            fig,
+            plot_df,
+            x,
+            level_column="buy_setup_stop",
+            active_column="buy_setup_stop_active",
+            color="rgba(128,0,128,0.7)",  # Purple
+            name="Buy Stop",
+            price_column="close",
+            check_price_below=True,
+        )
+
+    # Process sell stop levels (resistance)
+    if (
+        "sell_setup_stop" in plot_df.columns
+        and "sell_setup_stop_active" in plot_df.columns
+    ):
+        add_discontinuous_levels(
+            fig,
+            plot_df,
+            x,
+            level_column="sell_setup_stop",
+            active_column="sell_setup_stop_active",
+            color="rgba(255,165,0,0.7)",  # Orange
+            name="Sell Stop",
+            price_column="close",
+            check_price_above=True,
+        )
+
+
+def add_discontinuous_levels(
+    fig,
+    plot_df,
+    x,
+    level_column,
+    active_column,
+    color,
+    name,
+    price_column=None,
+    check_price_below=False,
+    check_price_above=False,
+):
+    """
+    Add discontinuous horizontal levels (TDST or setup stop levels) to the figure
+
+    Parameters:
+    -----------
+    fig : plotly.graph_objects.Figure
+        Figure to add levels to
+    plot_df : pandas.DataFrame
+        DataFrame with the data
+    x : array-like
+        X-axis values
+    level_column : str
+        Column name for the level values
+    active_column : str
+        Column name for the active flags
+    color : str
+        Color for the lines
+    name : str
+        Name for the hover info
+    price_column : str, optional
+        Column name for the price to check against the level
+    check_price_below : bool, optional
+        Whether to check if price is below the level
+    check_price_above : bool, optional
+        Whether to check if price is above the level
+    """
+    segments = []
+    current_segment = None
+
+    for i, row in plot_df.iterrows():
+        # Skip if not active
+        if not row[active_column]:
             if current_segment is not None:
-                buy_tdst_segments.append(current_segment)
+                segments.append(current_segment)
+                current_segment = None
+            continue
 
-            for segment in buy_tdst_segments:
-                fig.add_trace(
-                    go.Scatter(
-                        x=[segment["start"], segment["end"]],
-                        y=[segment["level"], segment["level"]],
-                        mode="lines",
-                        line=dict(color="rgba(0,168,107,0.7)", width=1, dash="dot"),
-                        name="Buy TDST",
-                        showlegend=False,
-                        hoverinfo="y+name",
-                    )
-                )
-
-        if (
-            "sell_tdst_level" in plot_df.columns
-            and "sell_tdst_active" in plot_df.columns
-        ):
-            # Process sell TDST levels (support)
-            sell_tdst_segments = []
-            current_segment = None
-
-            for i, row in plot_df.iterrows():
-                if row["sell_tdst_active"]:
-                    if current_segment is None:
-                        current_segment = {
-                            "start": i,
-                            "end": i,
-                            "level": row["sell_tdst_level"],
-                        }
-                    else:
-                        if row["sell_tdst_level"] == current_segment["level"]:
-                            current_segment["end"] = i
-                        else:
-                            sell_tdst_segments.append(current_segment)
-                            current_segment = {
-                                "start": i,
-                                "end": i,
-                                "level": row["sell_tdst_level"],
-                            }
-                else:
-                    if current_segment is not None:
-                        sell_tdst_segments.append(current_segment)
-                        current_segment = None
-
+        # Check price conditions if specified
+        if check_price_below and price_column and row[price_column] < row[level_column]:
             if current_segment is not None:
-                sell_tdst_segments.append(current_segment)
+                segments.append(current_segment)
+                current_segment = None
+            continue
 
-            for segment in sell_tdst_segments:
-                fig.add_trace(
-                    go.Scatter(
-                        x=[segment["start"], segment["end"]],
-                        y=[segment["level"], segment["level"]],
-                        mode="lines",
-                        line=dict(color="rgba(220,39,39,0.7)", width=1, dash="dot"),
-                        name="Sell TDST",
-                        showlegend=False,
-                        hoverinfo="y+name",
-                    )
-                )
-
-    # Add Buy Setup Stop levels as discontinuous lines (if enabled)
-    if show_setup_stop_loss:
-        if (
-            "buy_setup_stop" in plot_df.columns
-            and "buy_setup_stop_active" in plot_df.columns
-        ):
-            # Process buy stop levels (support)
-            buy_stop_segments = []
-            current_segment = None
-
-            for i, row in plot_df.iterrows():
-                if row["buy_setup_stop_active"]:
-                    # Check if price has closed below the stop level
-                    if row["close"] < row["buy_setup_stop"]:
-                        # If we have an active segment, close it
-                        if current_segment is not None:
-                            buy_stop_segments.append(current_segment)
-                            current_segment = None
-                        continue
-
-                    if current_segment is None:
-                        current_segment = {
-                            "start": i,
-                            "end": i,
-                            "level": row["buy_setup_stop"],
-                        }
-                    else:
-                        if row["buy_setup_stop"] == current_segment["level"]:
-                            current_segment["end"] = i
-                        else:
-                            buy_stop_segments.append(current_segment)
-                            current_segment = {
-                                "start": i,
-                                "end": i,
-                                "level": row["buy_setup_stop"],
-                            }
-                else:
-                    if current_segment is not None:
-                        buy_stop_segments.append(current_segment)
-                        current_segment = None
-
+        if check_price_above and price_column and row[price_column] > row[level_column]:
             if current_segment is not None:
-                buy_stop_segments.append(current_segment)
+                segments.append(current_segment)
+                current_segment = None
+            continue
 
-            for segment in buy_stop_segments:
-                fig.add_trace(
-                    go.Scatter(
-                        x=[segment["start"], segment["end"]],
-                        y=[segment["level"], segment["level"]],
-                        mode="lines",
-                        line=dict(
-                            color="rgba(128,0,128,0.7)", width=1, dash="dash"
-                        ),  # Purple
-                        name="Buy Stop",
-                        showlegend=False,
-                        hoverinfo="y+name",
-                    )
-                )
+        # Start a new segment or continue the current one
+        if current_segment is None:
+            current_segment = {
+                "start": i,
+                "end": i,
+                "level": row[level_column],
+            }
+        else:
+            if row[level_column] == current_segment["level"]:
+                current_segment["end"] = i
+            else:
+                segments.append(current_segment)
+                current_segment = {
+                    "start": i,
+                    "end": i,
+                    "level": row[level_column],
+                }
 
-        # Add Sell Setup Stop levels as discontinuous lines (using orange)
-        if (
-            "sell_setup_stop" in plot_df.columns
-            and "sell_setup_stop_active" in plot_df.columns
-        ):
-            # Process sell stop levels (resistance)
-            sell_stop_segments = []
-            current_segment = None
+    # Add the last segment if there is one
+    if current_segment is not None:
+        segments.append(current_segment)
 
-            for i, row in plot_df.iterrows():
-                if row["sell_setup_stop_active"]:
-                    # Check if price has closed above the stop level
-                    if row["close"] > row["sell_setup_stop"]:
-                        # If we have an active segment, close it
-                        if current_segment is not None:
-                            sell_stop_segments.append(current_segment)
-                            current_segment = None
-                        continue
+    # Add all segments to the figure
+    for segment in segments:
+        # Convert index to x values if needed
+        start_x = (
+            x[plot_df.index.get_loc(segment["start"])]
+            if isinstance(x, pd.DatetimeIndex)
+            else segment["start"]
+        )
+        end_x = (
+            x[plot_df.index.get_loc(segment["end"])]
+            if isinstance(x, pd.DatetimeIndex)
+            else segment["end"]
+        )
 
-                    if current_segment is None:
-                        current_segment = {
-                            "start": i,
-                            "end": i,
-                            "level": row["sell_setup_stop"],
-                        }
-                    else:
-                        if row["sell_setup_stop"] == current_segment["level"]:
-                            current_segment["end"] = i
-                        else:
-                            sell_stop_segments.append(current_segment)
-                            current_segment = {
-                                "start": i,
-                                "end": i,
-                                "level": row["sell_setup_stop"],
-                            }
-                else:
-                    if current_segment is not None:
-                        sell_stop_segments.append(current_segment)
-                        current_segment = None
+        fig.add_trace(
+            go.Scatter(
+                x=[start_x, end_x],
+                y=[segment["level"], segment["level"]],
+                mode="lines",
+                line=dict(color=color, width=1, dash="dash"),
+                name=name,
+                showlegend=False,
+                hoverinfo="y+name",
+            )
+        )
 
-            if current_segment is not None:
-                sell_stop_segments.append(current_segment)
 
-            for segment in sell_stop_segments:
-                fig.add_trace(
-                    go.Scatter(
-                        x=[segment["start"], segment["end"]],
-                        y=[segment["level"], segment["level"]],
-                        mode="lines",
-                        line=dict(
-                            color="rgba(255,165,0,0.7)", width=1, dash="dash"
-                        ),  # Orange
-                        name="Sell Stop",
-                        showlegend=False,
-                        hoverinfo="y+name",
-                    )
-                )
+def add_setup_annotations(fig, plot_df, x, annotation_params, annotation_positions):
+    """Add Buy and Sell Setup annotations above candlesticks"""
+    add_buy_setup_annotations(fig, plot_df, x, annotation_params, annotation_positions)
+    add_sell_setup_annotations(fig, plot_df, x, annotation_params, annotation_positions)
 
-    # Add Buy Setup annotations (above candlesticks)
+
+def add_buy_setup_annotations(fig, plot_df, x, annotation_params, annotation_positions):
+    """Add Buy Setup annotations above candlesticks"""
+    setup_offset = annotation_params["setup_offset"]
+    signal_offset = annotation_params["signal_offset"]
+
     for i, row in plot_df.iterrows():
         idx = x[plot_df.index.get_loc(i)] if isinstance(x, pd.DatetimeIndex) else i
 
         # Show all setup numbers
         if row["buy_setup"] > 0:
-            y_pos = get_adjusted_position(idx, row["high"] + setup_offset, True)
+            y_pos = get_adjusted_position(
+                idx, row["high"] + setup_offset, True, annotation_positions
+            )
             # Make higher numbers more prominent
             font_size = 10 + min(2, row["buy_setup"] - 1)
             fig.add_annotation(
@@ -333,19 +344,28 @@ def plot_tdsequential(
                 arrowwidth=2,
                 arrowcolor="rgb(0,168,107)",
                 font=dict(color="white", size=12, family="Arial Black"),
-                bgcolor="rgba(0,168,107,0.5)",  # Transparent background
+                bgcolor="rgba(0,168,107,0.5)",
                 borderpad=4,
                 borderwidth=0,
                 opacity=0.9,
             )
 
-    # Add Sell Setup annotations (above candlesticks)
+
+def add_sell_setup_annotations(
+    fig, plot_df, x, annotation_params, annotation_positions
+):
+    """Add Sell Setup annotations above candlesticks"""
+    setup_offset = annotation_params["setup_offset"]
+    signal_offset = annotation_params["signal_offset"]
+
     for i, row in plot_df.iterrows():
         idx = x[plot_df.index.get_loc(i)] if isinstance(x, pd.DatetimeIndex) else i
 
         # Show all setup numbers
         if row["sell_setup"] > 0:
-            y_pos = get_adjusted_position(idx, row["high"] + setup_offset, True)
+            y_pos = get_adjusted_position(
+                idx, row["high"] + setup_offset, True, annotation_positions
+            )
             # Make higher numbers more prominent
             font_size = 10 + min(2, row["sell_setup"] - 1)
             fig.add_annotation(
@@ -369,23 +389,41 @@ def plot_tdsequential(
                 arrowwidth=2,
                 arrowcolor="rgb(220,39,39)",
                 font=dict(color="white", size=12, family="Arial Black"),
-                bgcolor="rgba(220,39,39,0.5)",  # Transparent background
+                bgcolor="rgba(220,39,39,0.5)",
                 borderpad=4,
                 borderwidth=0,
                 opacity=0.9,
             )
 
+
+def add_countdown_annotations(fig, plot_df, x, annotation_params, annotation_positions):
+    """Add Buy and Sell Countdown annotations below candlesticks"""
+    add_buy_countdown_annotations(
+        fig, plot_df, x, annotation_params, annotation_positions
+    )
+    add_sell_countdown_annotations(
+        fig, plot_df, x, annotation_params, annotation_positions
+    )
+
+
+def add_buy_countdown_annotations(
+    fig, plot_df, x, annotation_params, annotation_positions
+):
+    """Add Buy Countdown annotations below candlesticks"""
+    countdown_offset = annotation_params["countdown_offset"]
+    signal_offset = annotation_params["signal_offset"]
+
     # Track the last countdown numbers to detect repeats
     last_buy_countdown = None
-    last_sell_countdown = None
 
-    # Add Buy Countdown annotations (below candlesticks)
     for i, row in plot_df.iterrows():
         idx = x[plot_df.index.get_loc(i)] if isinstance(x, pd.DatetimeIndex) else i
 
         # Only show the first occurrence of each countdown number
         if row["buy_countdown"] > 0 and row["buy_countdown"] != last_buy_countdown:
-            y_pos = get_adjusted_position(idx, row["low"] - countdown_offset, False)
+            y_pos = get_adjusted_position(
+                idx, row["low"] - countdown_offset, False, annotation_positions
+            )
             font_size = 10 + min(2, row["buy_countdown"] // 5)
             fig.add_annotation(
                 x=idx,
@@ -408,7 +446,7 @@ def plot_tdsequential(
                     arrowwidth=2,
                     arrowcolor="rgb(0,168,107)",
                     font=dict(color="white", size=12, family="Arial Black"),
-                    bgcolor="rgba(0,168,107,0.5)",  # Transparent background
+                    bgcolor="rgba(0,168,107,0.5)",
                     borderpad=4,
                     borderwidth=0,
                     opacity=0.9,
@@ -417,13 +455,25 @@ def plot_tdsequential(
         # Update the last countdown number
         last_buy_countdown = row["buy_countdown"] if row["buy_countdown"] > 0 else None
 
-    # Add Sell Countdown annotations (below candlesticks)
+
+def add_sell_countdown_annotations(
+    fig, plot_df, x, annotation_params, annotation_positions
+):
+    """Add Sell Countdown annotations below candlesticks"""
+    countdown_offset = annotation_params["countdown_offset"]
+    signal_offset = annotation_params["signal_offset"]
+
+    # Track the last countdown numbers to detect repeats
+    last_sell_countdown = None
+
     for i, row in plot_df.iterrows():
         idx = x[plot_df.index.get_loc(i)] if isinstance(x, pd.DatetimeIndex) else i
 
         # Only show the first occurrence of each countdown number
         if row["sell_countdown"] > 0 and row["sell_countdown"] != last_sell_countdown:
-            y_pos = get_adjusted_position(idx, row["low"] - countdown_offset, False)
+            y_pos = get_adjusted_position(
+                idx, row["low"] - countdown_offset, False, annotation_positions
+            )
             font_size = 10 + min(2, row["sell_countdown"] // 5)
             fig.add_annotation(
                 x=idx,
@@ -446,7 +496,7 @@ def plot_tdsequential(
                     arrowwidth=2,
                     arrowcolor="rgb(220,39,39)",
                     font=dict(color="white", size=12, family="Arial Black"),
-                    bgcolor="rgba(220,39,39,0.5)",  # Transparent background
+                    bgcolor="rgba(220,39,39,0.5)",
                     borderpad=4,
                     borderwidth=0,
                     opacity=0.9,
@@ -457,6 +507,9 @@ def plot_tdsequential(
             row["sell_countdown"] if row["sell_countdown"] > 0 else None
         )
 
+
+def add_legend(fig, show_support_resistance, show_setup_stop_loss):
+    """Add a legend to the figure"""
     # Create a clearer legend using shapes and annotations
     fig.add_shape(
         type="rect",
@@ -471,7 +524,7 @@ def plot_tdsequential(
         layer="below",
     )
 
-    # Add clearer, color-coded legend text including stop levels with new colors
+    # Add clearer, color-coded legend text
     legend_texts = [
         ("BUY SETUP (1-9)", "rgb(0,168,107)", 0.025, 0.135),
         ("SELL SETUP (1-9)", "rgb(220,39,39)", 0.025, 0.115),
@@ -515,7 +568,9 @@ def plot_tdsequential(
             bgcolor="rgba(0,0,0,0)",
         )
 
-    # Update layout with dark theme styling
+
+def update_layout(fig, stock_name):
+    """Update the figure layout with dark theme styling"""
     title = f"TD Sequential Analysis{' - ' + stock_name if stock_name else ''}"
     fig.update_layout(
         title=dict(text=title, font=dict(size=24, family="Arial", color="#FFFFFF")),
@@ -550,5 +605,3 @@ def plot_tdsequential(
         title_font=dict(color="#FFFFFF"),
         tickfont=dict(color="#FFFFFF"),
     )
-
-    return fig
