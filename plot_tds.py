@@ -10,11 +10,12 @@ def plot_tdsequential(
     window=100,
     show_support_resistance=True,
     show_setup_stop_loss=True,
+    show_countdown_stop_loss=True,
 ):
     """
     Plot TD Sequential indicators on a candlestick chart with TDST levels and improved readability.
     Shows all setup numbers (1-9) above candlesticks and only first occurrence of countdown numbers (1-13) below candlesticks.
-    Displays TDST levels and setup stop levels as discontinuous horizontal lines.
+    Displays TDST levels, setup stop levels, and countdown stop levels as discontinuous horizontal lines.
 
     Parameters:
     -----------
@@ -28,6 +29,8 @@ def plot_tdsequential(
         Whether to show TDST support/resistance levels, default is True
     show_setup_stop_loss : bool, optional
         Whether to show setup stop loss levels, default is True
+    show_countdown_stop_loss : bool, optional
+        Whether to show countdown stop loss levels, default is True
 
     Returns:
     --------
@@ -63,6 +66,10 @@ def plot_tdsequential(
     # Add Buy Setup Stop levels and Sell Setup Stop levels as discontinuous lines (if enabled)
     if show_setup_stop_loss:
         add_setup_stop_levels(fig, plot_df, x)
+        
+    # Add Buy Countdown Stop levels and Sell Countdown Stop levels as discontinuous lines (if enabled)
+    if show_countdown_stop_loss:
+        add_countdown_stop_levels(fig, plot_df, x)
 
     # Add Buy and Sell Setup annotations (above candlesticks)
     add_setup_annotations(fig, plot_df, x, annotation_params, annotation_positions)
@@ -71,7 +78,7 @@ def plot_tdsequential(
     add_countdown_annotations(fig, plot_df, x, annotation_params, annotation_positions)
 
     # Create a legend and add title
-    add_legend(fig, show_support_resistance, show_setup_stop_loss)
+    add_legend(fig, show_support_resistance, show_setup_stop_loss, show_countdown_stop_loss)
     update_layout(fig, stock_name)
 
     return fig
@@ -168,7 +175,7 @@ def add_setup_stop_levels(fig, plot_df, x):
             level_column="buy_setup_stop",
             active_column="buy_setup_stop_active",
             color="rgba(128,0,128,0.7)",  # Purple
-            name="Buy Stop",
+            name="Buy Setup Stop",
             price_column="close",
             check_price_below=True,
         )
@@ -185,7 +192,44 @@ def add_setup_stop_levels(fig, plot_df, x):
             level_column="sell_setup_stop",
             active_column="sell_setup_stop_active",
             color="rgba(255,165,0,0.7)",  # Orange
-            name="Sell Stop",
+            name="Sell Setup Stop",
+            price_column="close",
+            check_price_above=True,
+        )
+
+
+def add_countdown_stop_levels(fig, plot_df, x):
+    """Add countdown stop loss levels to the figure"""
+    # Process buy countdown stop levels (support)
+    if (
+        "buy_countdown_stop" in plot_df.columns
+        and "buy_countdown_stop_active" in plot_df.columns
+    ):
+        add_discontinuous_levels(
+            fig,
+            plot_df,
+            x,
+            level_column="buy_countdown_stop",
+            active_column="buy_countdown_stop_active",
+            color="rgba(0,0,255,0.7)",  # Blue
+            name="Buy Countdown Stop",
+            price_column="close",
+            check_price_below=True,
+        )
+
+    # Process sell countdown stop levels (resistance)
+    if (
+        "sell_countdown_stop" in plot_df.columns
+        and "sell_countdown_stop_active" in plot_df.columns
+    ):
+        add_discontinuous_levels(
+            fig,
+            plot_df,
+            x,
+            level_column="sell_countdown_stop",
+            active_column="sell_countdown_stop_active",
+            color="rgba(0,0,255,0.7)",  # Blue
+            name="Sell Countdown Stop",
             price_column="close",
             check_price_above=True,
         )
@@ -204,7 +248,7 @@ def add_discontinuous_levels(
     check_price_above=False,
 ):
     """
-    Add discontinuous horizontal levels (TDST or setup stop levels) to the figure
+    Add discontinuous horizontal levels (TDST or stop levels) to the figure
 
     Parameters:
     -----------
@@ -233,12 +277,74 @@ def add_discontinuous_levels(
     current_segment = None
 
     for i, row in plot_df.iterrows():
-        # Skip if not active
-        if not row[active_column]:
+        # Skip if not active or level is NaN
+        if not row[active_column] or pd.isna(row[level_column]):
             if current_segment is not None:
                 segments.append(current_segment)
                 current_segment = None
             continue
+
+        # Check price conditions if specified
+        if check_price_below and price_column and row[price_column] < row[level_column]:
+            if current_segment is not None:
+                segments.append(current_segment)
+                current_segment = None
+            continue
+
+        if check_price_above and price_column and row[price_column] > row[level_column]:
+            if current_segment is not None:
+                segments.append(current_segment)
+                current_segment = None
+            continue
+
+        # Start a new segment or continue the current one
+        if current_segment is None:
+            current_segment = {
+                "start": i,
+                "end": i,
+                "level": row[level_column],
+            }
+        else:
+            if row[level_column] == current_segment["level"]:
+                current_segment["end"] = i
+            else:
+                segments.append(current_segment)
+                current_segment = {
+                    "start": i,
+                    "end": i,
+                    "level": row[level_column],
+                }
+
+    # Add the last segment if there is one
+    if current_segment is not None:
+        segments.append(current_segment)
+    
+    # Add all segments to the figure
+    for segment in segments:
+        # Convert index to x values if needed
+        start_x = (
+            x[plot_df.index.get_loc(segment["start"])]
+            if isinstance(x, pd.DatetimeIndex)
+            else segment["start"]
+        )
+        end_x = (
+            x[plot_df.index.get_loc(segment["end"])]
+            if isinstance(x, pd.DatetimeIndex)
+            else segment["end"]
+        )
+
+        fig.add_trace(
+            go.Scatter(
+                x=[start_x, end_x],
+                y=[segment["level"], segment["level"]],
+                mode="lines",
+                line=dict(color=color, width=1, dash="dash"),
+                name=name,
+                showlegend=False,
+                hoverinfo="y+name",
+            )
+        )
+        continue
 
         # Check price conditions if specified
         if check_price_below and price_column and row[price_column] < row[level_column]:
@@ -508,7 +614,7 @@ def add_sell_countdown_annotations(
         )
 
 
-def add_legend(fig, show_support_resistance, show_setup_stop_loss):
+def add_legend(fig, show_support_resistance, show_setup_stop_loss, show_countdown_stop_loss):
     """Add a legend to the figure"""
     # Create a clearer legend using shapes and annotations
     fig.add_shape(
@@ -518,7 +624,7 @@ def add_legend(fig, show_support_resistance, show_setup_stop_loss):
         x0=0.01,
         y0=0.01,
         x1=0.3,
-        y1=0.15,
+        y1=0.19,  # Increased height to accommodate additional legend items
         fillcolor="rgba(40,40,40,0.9)",  # Dark background for legend
         line=dict(color="#555555", width=1),
         layer="below",
@@ -526,32 +632,46 @@ def add_legend(fig, show_support_resistance, show_setup_stop_loss):
 
     # Add clearer, color-coded legend text
     legend_texts = [
-        ("BUY SETUP (1-9)", "rgb(0,168,107)", 0.025, 0.135),
-        ("SELL SETUP (1-9)", "rgb(220,39,39)", 0.025, 0.115),
-        ("BUY COUNTDOWN (1-13)", "rgb(0,168,107)", 0.025, 0.095),
-        ("SELL COUNTDOWN (1-13)", "rgb(220,39,39)", 0.025, 0.075),
+        ("BUY SETUP (1-9)", "rgb(0,168,107)", 0.025, 0.175),
+        ("SELL SETUP (1-9)", "rgb(220,39,39)", 0.025, 0.155),
+        ("BUY COUNTDOWN (1-13)", "rgb(0,168,107)", 0.025, 0.135),
+        ("SELL COUNTDOWN (1-13)", "rgb(220,39,39)", 0.025, 0.115),
     ]
 
     # Only add TDST levels to legend if enabled
     if show_support_resistance:
         legend_texts.extend(
             [
-                ("BUY TDST (Resistance)", "rgba(0,168,107,0.7)", 0.025, 0.055),
-                ("SELL TDST (Support)", "rgba(220,39,39,0.7)", 0.025, 0.035),
+                ("BUY TDST (Resistance)", "rgba(0,168,107,0.7)", 0.025, 0.095),
+                ("SELL TDST (Support)", "rgba(220,39,39,0.7)", 0.025, 0.075),
             ]
         )
 
-    # Only add stop levels to legend if enabled
+    # Only add setup stop levels to legend if enabled
     if show_setup_stop_loss:
         legend_texts.extend(
             [
-                ("BUY STOP (Support)", "rgba(128,0,128,0.7)", 0.025, 0.015),  # Purple
+                ("BUY SETUP STOP (Support)", "rgba(128,0,128,0.7)", 0.025, 0.055),  # Purple
                 (
-                    "SELL STOP (Resistance)",
+                    "SELL SETUP STOP (Resistance)",
                     "rgba(255,165,0,0.7)",
                     0.025,
-                    -0.005,
+                    0.035,
                 ),  # Orange
+            ]
+        )
+        
+    # Only add countdown stop levels to legend if enabled
+    if show_countdown_stop_loss:
+        legend_texts.extend(
+            [
+                ("BUY COUNTDOWN STOP (Support)", "rgba(0,0,255,0.7)", 0.025, 0.015),  # Blue
+                (
+                    "SELL COUNTDOWN STOP (Resistance)",
+                    "rgba(0,0,255,0.7)",
+                    0.025,
+                    -0.005,
+                ),  # Blue
             ]
         )
 
