@@ -318,68 +318,6 @@ def add_discontinuous_levels(
     # Add the last segment if there is one
     if current_segment is not None:
         segments.append(current_segment)
-    
-    # Add all segments to the figure
-    for segment in segments:
-        # Convert index to x values if needed
-        start_x = (
-            x[plot_df.index.get_loc(segment["start"])]
-            if isinstance(x, pd.DatetimeIndex)
-            else segment["start"]
-        )
-        end_x = (
-            x[plot_df.index.get_loc(segment["end"])]
-            if isinstance(x, pd.DatetimeIndex)
-            else segment["end"]
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=[start_x, end_x],
-                y=[segment["level"], segment["level"]],
-                mode="lines",
-                line=dict(color=color, width=1, dash="dash"),
-                name=name,
-                showlegend=False,
-                hoverinfo="y+name",
-            )
-        )
-        continue
-
-        # Check price conditions if specified
-        if check_price_below and price_column and row[price_column] < row[level_column]:
-            if current_segment is not None:
-                segments.append(current_segment)
-                current_segment = None
-            continue
-
-        if check_price_above and price_column and row[price_column] > row[level_column]:
-            if current_segment is not None:
-                segments.append(current_segment)
-                current_segment = None
-            continue
-
-        # Start a new segment or continue the current one
-        if current_segment is None:
-            current_segment = {
-                "start": i,
-                "end": i,
-                "level": row[level_column],
-            }
-        else:
-            if row[level_column] == current_segment["level"]:
-                current_segment["end"] = i
-            else:
-                segments.append(current_segment)
-                current_segment = {
-                    "start": i,
-                    "end": i,
-                    "level": row[level_column],
-                }
-
-    # Add the last segment if there is one
-    if current_segment is not None:
-        segments.append(current_segment)
 
     # Add all segments to the figure
     for segment in segments:
@@ -406,7 +344,6 @@ def add_discontinuous_levels(
                 hoverinfo="y+name",
             )
         )
-
 
 def add_setup_annotations(fig, plot_df, x, annotation_params, annotation_positions):
     """Add Buy and Sell Setup annotations above candlesticks"""
