@@ -541,11 +541,12 @@ def _calculate_countdown_phases(df):
     for i in range(9, len(df)):
         # Process buy side setup completion
         if df["buy_setup"].iloc[i] == 9:
-            # Reset any existing countdown
-            buy_countdown_active = True
-            buy_countdown_bars = []
-            current_buy_setup_idx = i
-            df.loc[df.index[i], "buy_countdown_active"] = 1
+            # Only reset if not already active or reset sell countdown
+            if not buy_countdown_active:
+                buy_countdown_active = True
+                buy_countdown_bars = []
+                current_buy_setup_idx = i
+                df.loc[df.index[i], "buy_countdown_active"] = 1
             
             # If sell countdown is active, reset it
             if sell_countdown_active:
@@ -561,11 +562,12 @@ def _calculate_countdown_phases(df):
 
         # Process sell side setup completion
         if df["sell_setup"].iloc[i] == 9:
-            # Reset any existing countdown
-            sell_countdown_active = True
-            sell_countdown_bars = []
-            current_sell_setup_idx = i
-            df.loc[df.index[i], "sell_countdown_active"] = 1
+            # Only reset if not already active or reset buy countdown
+            if not sell_countdown_active:
+                sell_countdown_active = True
+                sell_countdown_bars = []
+                current_sell_setup_idx = i
+                df.loc[df.index[i], "sell_countdown_active"] = 1
             
             # If buy countdown is active, reset it
             if buy_countdown_active:
