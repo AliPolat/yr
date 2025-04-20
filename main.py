@@ -68,7 +68,7 @@ selected_interval = st.sidebar.selectbox(
 )
 
 # Add checkboxes for display options
-display_options = st.sidebar.expander("Display Options", expanded=True)
+display_options = st.sidebar.expander("Display Options", expanded=False)
 show_support_resistance = display_options.checkbox(
     "Display Support/Resistance",
     value=True,
@@ -78,6 +78,12 @@ show_setup_stop_loss = display_options.checkbox(
     "Display Setup Stop Loss",
     value=True,
     help="Show stop loss levels for TD Sequential setups",
+)
+
+show_countdown_stop_loss = display_options.checkbox(
+    "Display Countdown Stop Loss",
+    value=True,
+    help="Show stop loss levels for TD Sequential countdowns",
 )
 
 # Download button
@@ -103,6 +109,7 @@ if st.sidebar.button("Download Data"):
             window=1000,
             show_support_resistance=show_support_resistance,
             show_setup_stop_loss=show_setup_stop_loss,
+            show_countdown_stop_loss=show_countdown_stop_loss,
         )
         st.plotly_chart(fig, use_container_width=True)
 
@@ -110,5 +117,3 @@ if st.sidebar.button("Download Data"):
         st.subheader("Data Table")
         display_cols = ["Open", "High", "Low", "Close", "Volume"]
         st.dataframe(td_data)
-
-
