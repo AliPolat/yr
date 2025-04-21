@@ -8,6 +8,7 @@ from plot_tds import plot_tdsequential
 
 # Define functions first, before the Streamlit interface code
 
+
 def get_stock_data(ticker, start_date, end_date, interval):
     """Download stock data using yfinance and fix column names"""
     try:
@@ -39,7 +40,15 @@ else:
     ticker = selected_stock_option
 
 # Time period selection
-period_options = ["3 months", "1 month", "6 months", "1 year", "Other"]
+period_options = [
+    "1 day",
+    "1 week",
+    "1 month",
+    "3 months",
+    "6 months",
+    "1 year",
+    "Other",
+]
 selected_period = st.sidebar.selectbox("Select Time Period", period_options)
 
 # If "Other" is selected, let the user input a custom period
@@ -51,7 +60,11 @@ if selected_period == "Other":
     start_date = end_date - timedelta(days=custom_period_days)
 else:
     end_date = datetime.now()
-    if selected_period == "1 month":
+    if selected_period == "1 day":
+        start_date = end_date - timedelta(days=1)
+    elif selected_period == "1 week":
+        start_date = end_date - timedelta(days=7)
+    elif selected_period == "1 month":
         start_date = end_date - timedelta(days=30)
     elif selected_period == "3 months":
         start_date = end_date - timedelta(days=90)
@@ -61,11 +74,26 @@ else:
         start_date = end_date - timedelta(days=365)
 
 # Interval selection
-interval_options = ["1d", "1wk", "1mo"]
-interval_names = {"1d": "1 Day", "1wk": "1 Week", "1mo": "1 Month"}
+interval_options = ["5m", "15m", "1h", "4h", "1d", "1wk", "1mo"]
+interval_names = {
+    "5m": "5 Minutes",
+    "15m": "15 Minutes",
+    "1h": "1 Hour",
+    "4h": "4 Hours",
+    "1d": "1 Day",
+    "1wk": "1 Week",
+    "1mo": "1 Month",
+}
 selected_interval = st.sidebar.selectbox(
     "Select Interval", interval_options, format_func=lambda x: interval_names[x]
 )
+
+# Add note about intraday data limitations
+if selected_interval in ["5m", "15m", "1h", "4h"]:
+    st.sidebar.info(
+        "Note: Intraday data (minutes/hours) is typically only available for the last 60 days. "
+        "For longer periods, please use daily intervals or higher."
+    )
 
 # Add checkboxes for display options
 display_options = st.sidebar.expander("Display Options", expanded=False)
@@ -115,5 +143,4 @@ if st.sidebar.button("Download Data"):
 
         # Display the dataframe
         st.subheader("Data Table")
-        display_cols = ["Open", "High", "Low", "Close", "Volume"]
         st.dataframe(td_data)
