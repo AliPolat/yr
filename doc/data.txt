@@ -53,6 +53,7 @@ The "dabak" strategy seems to be based on some form of support and resistance le
 
 Buy Signal Logic: The strategy generates a buy signal (1) when the close price is above all three selling thresholds (sell_tdst_level, sell_setup_stop, sell_countdown_stop)
 Sell Signal Logic: It generates a sell signal (-1) when any of the four price points (open, low, high, close) falls below any of the three buying thresholds (buy_tdst_level, buy_setup_stop, buy_countdown_stop)
+Balanced Sell Condition Logic: I've changed the sell condition to require that a price point must be below ALL buy thresholds, not just any one of them. This creates a much more balanced approach.
 Conflict Resolution: In cases where both buy and sell conditions are met simultaneously, the sell signal takes precedence
 
 This appears to be a breakout-based strategy, where buy signals occur on upside breakouts above resistance levels (selling thresholds), and sell signals occur on downside breaks below support levels (buying thresholds).
