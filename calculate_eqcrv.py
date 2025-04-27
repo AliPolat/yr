@@ -94,24 +94,18 @@ def apply_simple_strategy(
         for col in sell_columns:
             # If all values are NaN, use a very low value, otherwise use the minimum existing value
             if df[col].notna().any():
-                min_val = df[col].min()
-                df[f"{col}_filled"] = df[col].fillna(
-                    min_val * 0.5
-                )  # Use half of min value
+                df[f"{col}_filled"] = df[col].fillna(0)  # Use zero for NaN
             else:
-                df[f"{col}_filled"] = df[col].fillna(-float("inf"))
+                df[f"{col}_filled"] = df[col].fillna(0)  # Use zero for NaN
 
         # For buy threshold columns, we'll replace NaN with very high values
         # so they don't artificially trigger sell conditions
         for col in buy_columns:
             # If all values are NaN, use a very high value, otherwise use the maximum existing value
             if df[col].notna().any():
-                max_val = df[col].max()
-                df[f"{col}_filled"] = df[col].fillna(
-                    max_val * 2
-                )  # Use double max value
+                df[f"{col}_filled"] = df[col].fillna(0)  # Use zero for NaN
             else:
-                df[f"{col}_filled"] = df[col].fillna(float("inf"))
+                df[f"{col}_filled"] = df[col].fillna(0) # Use zero for NaN     
 
         # BUY conditions: Close > sell_tdst_level AND Close > sell_setup_stop AND Close > sell_countdown_stop
         # Only trigger buy when close is above ALL sell thresholds
@@ -125,28 +119,28 @@ def apply_simple_strategy(
         # This is more balanced than the original implementation
         sell_condition_close = (
             (df["close"] < df["buy_tdst_level_filled"])
-            & (df["close"] < df["buy_setup_stop_filled"])
-            & (df["close"] < df["buy_countdown_stop_filled"])
+            | (df["close"] < df["buy_setup_stop_filled"])
+            | (df["close"] < df["buy_countdown_stop_filled"])
         )
 
         # We'll still check other price points, but with a more balanced approach
         # Only trigger a sell if a price point breaks below ALL buy thresholds
         sell_condition_open = (
             (df["open"] < df["buy_tdst_level_filled"])
-            & (df["open"] < df["buy_setup_stop_filled"])
-            & (df["open"] < df["buy_countdown_stop_filled"])
+            | (df["open"] < df["buy_setup_stop_filled"])
+            | (df["open"] < df["buy_countdown_stop_filled"])
         )
 
         sell_condition_low = (
             (df["low"] < df["buy_tdst_level_filled"])
-            & (df["low"] < df["buy_setup_stop_filled"])
-            & (df["low"] < df["buy_countdown_stop_filled"])
+            | (df["low"] < df["buy_setup_stop_filled"])
+            | (df["low"] < df["buy_countdown_stop_filled"])
         )
 
         sell_condition_high = (
             (df["high"] < df["buy_tdst_level_filled"])
-            & (df["high"] < df["buy_setup_stop_filled"])
-            & (df["high"] < df["buy_countdown_stop_filled"])
+            | (df["high"] < df["buy_setup_stop_filled"])
+            | (df["high"] < df["buy_countdown_stop_filled"])
         )
 
         # Final sell condition - any price point breaking below ALL thresholds
