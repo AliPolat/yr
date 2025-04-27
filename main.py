@@ -178,7 +178,7 @@ if st.sidebar.button("Display Analysis"):
             st.plotly_chart(td_fig, use_container_width=True)
 
         with tab2:
-            st.dataframe(td_data)
+            st.dataframe(df_strategy, use_container_width=True)
 
         with tab3:
             st.plotly_chart(equity_fig, use_container_width=True)

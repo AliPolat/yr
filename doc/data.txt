@@ -46,3 +46,14 @@ AL : Kapanış değeri o barda aktif olan bütün çizgilerden büyükse alım y
 SAT ( Nakte Geç ) : Anlık fiyat aktif olan herhangi bir çizgiden küçükse sat ve nakte geç.
 
 add to this function a new strategy named dabak such that BUY if close value is greater than sell_tdst_level and sell_setup_stop and sell_countdown_stop. SELL if  any of open, low, high,close values is less than any of buy_tdst_level and buy_setup_stop and buy_countdown_stop. assume that sell_tdst_level and sell_setup_stop and sell_countdown_stops,  buy_tdst_level and buy_setup_stop and buy_countdown_stop colums exists in dataframe
+
+
+Explanation of the Dabak Strategy Logic
+The "dabak" strategy seems to be based on some form of support and resistance levels or technical indicators:
+
+Buy Signal Logic: The strategy generates a buy signal (1) when the close price is above all three selling thresholds (sell_tdst_level, sell_setup_stop, sell_countdown_stop)
+Sell Signal Logic: It generates a sell signal (-1) when any of the four price points (open, low, high, close) falls below any of the three buying thresholds (buy_tdst_level, buy_setup_stop, buy_countdown_stop)
+Conflict Resolution: In cases where both buy and sell conditions are met simultaneously, the sell signal takes precedence
+
+This appears to be a breakout-based strategy, where buy signals occur on upside breakouts above resistance levels (selling thresholds), and sell signals occur on downside breaks below support levels (buying thresholds).
+The correction I made ensures that NaN values in any of these threshold columns won't incorrectly prevent valid trading signals from being generated.
