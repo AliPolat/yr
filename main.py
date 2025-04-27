@@ -1,12 +1,14 @@
 from datetime import datetime, timedelta
 import streamlit as st
 import yfinance as yf
-import pandas as pd
 
 from calculate_tds import calculate_tdsequential
 from plot_tds import plot_tdsequential
-
-# Define functions first, before the Streamlit interface code
+from calculate_eqcrv import (
+    calculate_performance_metrics,
+    apply_simple_strategy,
+    create_performance_plots,
+)
 
 
 def get_stock_data(ticker, start_date, end_date, interval):
@@ -20,8 +22,6 @@ def get_stock_data(ticker, start_date, end_date, interval):
         st.error(f"Error downloading data: {e}")
         return None
 
-
-# Begin Streamlit UI code
 
 # Set the page title
 st.title("TD Sequential Indicator")
@@ -41,10 +41,10 @@ else:
 
 # Time period selection
 period_options = [
+    "3 months",
     "1 day",
     "1 week",
     "1 month",
-    "3 months",
     "6 months",
     "1 year",
     "Other",
@@ -60,27 +60,24 @@ if selected_period == "Other":
     start_date = end_date - timedelta(days=custom_period_days)
 else:
     end_date = datetime.now()
-    if selected_period == "1 day":
-        start_date = end_date - timedelta(days=1)
-    elif selected_period == "1 week":
-        start_date = end_date - timedelta(days=7)
-    elif selected_period == "1 month":
-        start_date = end_date - timedelta(days=30)
-    elif selected_period == "3 months":
-        start_date = end_date - timedelta(days=90)
-    elif selected_period == "6 months":
-        start_date = end_date - timedelta(days=180)
-    else:  # 1 year
-        start_date = end_date - timedelta(days=365)
+    period_days = {
+        "1 day": 1,
+        "1 week": 7,
+        "1 month": 30,
+        "3 months": 90,
+        "6 months": 180,
+        "1 year": 365,
+    }
+    start_date = end_date - timedelta(days=period_days.get(selected_period, 90))
 
 # Interval selection
-interval_options = ["5m", "15m", "1h", "4h", "1d", "1wk", "1mo"]
+interval_options = ["1d", "5m", "15m", "1h", "4h", "1wk", "1mo"]
 interval_names = {
+    "1d": "1 Day",
     "5m": "5 Minutes",
     "15m": "15 Minutes",
     "1h": "1 Hour",
     "4h": "4 Hours",
-    "1d": "1 Day",
     "1wk": "1 Week",
     "1mo": "1 Month",
 }
@@ -107,21 +104,35 @@ show_setup_stop_loss = display_options.checkbox(
     value=True,
     help="Show stop loss levels for TD Sequential setups",
 )
-
 show_countdown_stop_loss = display_options.checkbox(
     "Display Countdown Stop Loss",
     value=True,
     help="Show stop loss levels for TD Sequential countdowns",
 )
 
-# Download button
-if st.sidebar.button("Download Data"):
+# Strategy settings
+strategy_options = st.sidebar.expander("Strategy Options", expanded=False)
+initial_capital = strategy_options.number_input(
+    "Initial Capital", value=100000, step=10000
+)
+strategy_types = ["dabak", "sma_crossover", "mean_reversion", "other"]
+strategy_type = strategy_options.selectbox("Strategy Type", strategy_types)
+
+# If "other" is selected, let the user input a custom strategy name
+if strategy_type == "other":
+    custom_strategy = strategy_options.text_input(
+        "Enter Custom Strategy Name", "custom_strategy"
+    )
+    strategy_type = custom_strategy
+
+# Display Analysis button (renamed from Download Data)
+if st.sidebar.button("Display Analysis"):
     # Load data
     data = get_stock_data(ticker, start_date, end_date, selected_interval)
 
     # Display data information
     if data is not None and not data.empty:
-        st.header(f"{ticker} Historical Data")
+        st.header(f"{ticker} Analysis")
         st.write(
             f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
         )
@@ -130,8 +141,26 @@ if st.sidebar.button("Download Data"):
         # Apply TD Sequential calculation
         td_data = calculate_tdsequential(data, stock_name=ticker)
 
+        # Apply strategy
+        df_strategy = apply_simple_strategy(
+            td_data,
+            initial_capital=initial_capital,
+            strategy_type=strategy_type,
+            fast_period=20,  # Could make configurable
+            slow_period=50,  # Could make configurable
+        )
+
+        # Calculate metrics
+        metrics = calculate_performance_metrics(
+            df_strategy, initial_capital=initial_capital
+        )
+
+        # Create visualizations
+        title = f"{ticker} Trading Performance: {strategy_type.replace('_', ' ').title()} Strategy"
+        equity_fig, metrics_fig = create_performance_plots(df_strategy, metrics, title)
+
         # Plot candlestick chart with TD Sequential indicators
-        fig = plot_tdsequential(
+        td_fig = plot_tdsequential(
             td_data,
             stock_name=ticker,
             window=1000,
@@ -139,8 +168,20 @@ if st.sidebar.button("Download Data"):
             show_setup_stop_loss=show_setup_stop_loss,
             show_countdown_stop_loss=show_countdown_stop_loss,
         )
-        st.plotly_chart(fig, use_container_width=True)
 
-        # Display the dataframe
-        st.subheader("Data Table")
-        st.dataframe(td_data)
+        # Create tabs for different views
+        tab1, tab2, tab3, tab4 = st.tabs(
+            ["TD Sequential Chart", "Data Table", "Equity Curve", "Performance Metrics"]
+        )
+
+        with tab1:
+            st.plotly_chart(td_fig, use_container_width=True)
+
+        with tab2:
+            st.dataframe(td_data)
+
+        with tab3:
+            st.plotly_chart(equity_fig, use_container_width=True)
+
+        with tab4:
+            st.plotly_chart(metrics_fig, use_container_width=True)

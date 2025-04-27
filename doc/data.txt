@@ -1,0 +1,48 @@
+Datetime,
+close,
+high,
+low,
+open,
+volume,
+
+buy_setup,I
+sell_setup, I
+buy_countdown, I
+sell_countdown, I
+buy_countdown_active, L
+sell_countdown_active, L 
+
+buy_tdst_level, R
+buy_tdst_active, L
+
+buy_setup_stop, R
+buy_setup_stop_active, L
+buy_stop_triggered, L
+buy_stop_reactivated, L
+buy_countdown_stop, R
+buy_countdown_stop_active, L
+buy_countdown_stop_triggered, L
+buy_countdown_stop_reactivated, L
+
+sell_tdst_level,R
+sell_tdst_active, L
+sell_stop_triggered, L
+sell_stop_reactivated, L
+sell_setup_stop, R
+sell_setup_stop_active, L
+sell_countdown_stop, R
+sell_countdown_stop_active, L
+sell_countdown_stop_triggered, L
+sell_countdown_stop_reactivated, L
+
+stock_name
+perfect_buy_13, L
+perfect_sell_13, L
+perfect_buy_9, L
+perfect_sell_9, L
+
+Strateji : 
+AL : Kapanış değeri o barda aktif olan bütün çizgilerden büyükse alım yapılacak. 
+SAT ( Nakte Geç ) : Anlık fiyat aktif olan herhangi bir çizgiden küçükse sat ve nakte geç.
+
+add to this function a new strategy named dabak such that BUY if close value is greater than sell_tdst_level and sell_setup_stop and sell_countdown_stop. SELL if  any of open, low, high,close values is less than any of buy_tdst_level and buy_setup_stop and buy_countdown_stop. assume that sell_tdst_level and sell_setup_stop and sell_countdown_stops,  buy_tdst_level and buy_setup_stop and buy_countdown_stop colums exists in dataframe
