@@ -88,37 +88,29 @@ def apply_simple_strategy(
             if col not in df.columns:
                 raise ValueError(f"Required column '{col}' not found in dataframe")
 
-        # Fill NaN values appropriately - we'll use a more balanced approach
         # For sell threshold columns, we'll replace NaN with very low values
         # so they don't artificially trigger buy conditions
-        for col in sell_columns:
-            # If all values are NaN, use a very low value, otherwise use the minimum existing value
-            if df[col].notna().any():
-                df[f"{col}_filled"] = df[col].fillna(0)  # Use zero for NaN
-            else:
-                df[f"{col}_filled"] = df[col].fillna(0)  # Use zero for NaN
 
-        # For buy threshold columns, we'll replace NaN with very high values
-        # so they don't artificially trigger sell conditions
-        for col in buy_columns:
-            # If all values are NaN, use a very high value, otherwise use the maximum existing value
-            if df[col].notna().any():
-                df[f"{col}_filled"] = df[col].fillna(0)  # Use zero for NaN
-            else:
-                df[f"{col}_filled"] = df[col].fillna(0) # Use zero for NaN     
+        for col in sell_columns + buy_columns:
+            df[f"{col}_filled"] = df[col].shift(1).fillna(0)  # Shift by 1, replace NaN with 0
 
-        # BUY conditions: Close > sell_tdst_level AND Close > sell_setup_stop AND Close > sell_countdown_stop
+        # BUY conditions: Close > sell_tdst_level AND Close > sell_setup_stop AND Close > sell
         # Only trigger buy when close is above ALL sell thresholds
         buy_condition = (
-            (df["close"] > df["sell_tdst_level_filled"])
+            (df["close"] > df["buy_tdst_level_filled"])
             & (df["close"] > df["sell_setup_stop_filled"])
             & (df["close"] > df["sell_countdown_stop_filled"])
+            & (
+                (df["buy_tdst_level_filled"] > 0)
+                | (df["sell_setup_stop_filled"] > 0)
+                | (df["sell_countdown_stop_filled"] > 0)
+            )
         )
 
         # SELL conditions: require breaking below ALL buy thresholds to trigger a sell
         # This is more balanced than the original implementation
         sell_condition_close = (
-            (df["close"] < df["buy_tdst_level_filled"])
+            (df["close"] < df["sell_tdst_level_filled"])
             | (df["close"] < df["buy_setup_stop_filled"])
             | (df["close"] < df["buy_countdown_stop_filled"])
         )
@@ -126,19 +118,19 @@ def apply_simple_strategy(
         # We'll still check other price points, but with a more balanced approach
         # Only trigger a sell if a price point breaks below ALL buy thresholds
         sell_condition_open = (
-            (df["open"] < df["buy_tdst_level_filled"])
+            (df["open"] < df["sell_tdst_level_filled"])
             | (df["open"] < df["buy_setup_stop_filled"])
             | (df["open"] < df["buy_countdown_stop_filled"])
         )
 
         sell_condition_low = (
-            (df["low"] < df["buy_tdst_level_filled"])
+            (df["low"] < df["sell_tdst_level_filled"])
             | (df["low"] < df["buy_setup_stop_filled"])
             | (df["low"] < df["buy_countdown_stop_filled"])
         )
 
         sell_condition_high = (
-            (df["high"] < df["buy_tdst_level_filled"])
+            (df["high"] < df["sell_tdst_level_filled"])
             | (df["high"] < df["buy_setup_stop_filled"])
             | (df["high"] < df["buy_countdown_stop_filled"])
         )
@@ -159,8 +151,8 @@ def apply_simple_strategy(
         df.loc[buy_condition & sell_condition, "Signal"] = -1
 
         # Remove temporary columns
-        for col in sell_columns + buy_columns:
-            df.drop(f"{col}_filled", axis=1, inplace=True)
+        # for col in sell_columns + buy_columns:
+        #     df.drop(f"{col}_filled", axis=1, inplace=True)
 
         # Calculate position changes
         df["Position"] = df["Signal"].shift(1)

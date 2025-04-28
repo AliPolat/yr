@@ -12,25 +12,28 @@ sell_countdown, I
 buy_countdown_active, L
 sell_countdown_active, L 
 
-buy_tdst_level, R
+buy_tdst_level, R,  Üst Çizgi
 buy_tdst_active, L
 
-buy_setup_stop, R
+buy_setup_stop, R,  Alt Çizgi
 buy_setup_stop_active, L
 buy_stop_triggered, L
 buy_stop_reactivated, L
-buy_countdown_stop, R
+
+buy_countdown_stop, R, Alt Çizgi
 buy_countdown_stop_active, L
 buy_countdown_stop_triggered, L
 buy_countdown_stop_reactivated, L
 
-sell_tdst_level,R
+sell_tdst_level,R, Alt Çizgi
 sell_tdst_active, L
+
 sell_stop_triggered, L
 sell_stop_reactivated, L
-sell_setup_stop, R
+sell_setup_stop, R, Üst Çizgi
 sell_setup_stop_active, L
-sell_countdown_stop, R
+
+sell_countdown_stop, R, Üst Çizgi
 sell_countdown_stop_active, L
 sell_countdown_stop_triggered, L
 sell_countdown_stop_reactivated, L
