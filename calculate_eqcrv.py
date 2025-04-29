@@ -2,8 +2,6 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from datetime import datetime, timedelta
-import yfinance as yf
 
 
 def apply_simple_strategy(
@@ -23,11 +21,11 @@ def apply_simple_strategy(
     initial_capital : float
         Initial capital to start trading with
     strategy_type : str
-        Type of strategy to apply (default: "sma_crossover")
+        Type of strategy to apply (default: "dabak")
     fast_period : int
-        Fast moving average period
+        Fast moving average period (used for SMA and mean reversion strategies)
     slow_period : int
-        Slow moving average period
+        Slow moving average period (used for SMA strategy)
 
     Returns:
     --------
@@ -42,16 +40,10 @@ def apply_simple_strategy(
         df["SMA_Fast"] = df["close"].rolling(window=fast_period).mean()
         df["SMA_Slow"] = df["close"].rolling(window=slow_period).mean()
 
-        # Generate signals (1 = buy, -1 = sell, 0 = hold)
-        df["Signal"] = 0
-        df.loc[df["SMA_Fast"] > df["SMA_Slow"], "Signal"] = 1
-        df.loc[df["SMA_Fast"] < df["SMA_Slow"], "Signal"] = -1
-
-        # Calculate position changes
-        df["Position"] = df["Signal"].shift(
-            1
-        )  # Previous day's signal determines today's position
-        df["Position"] = df["Position"].fillna(0)  # No position on first day
+        # Generate raw signals (1 = buy, -1 = sell, 0 = hold)
+        df["Raw_Signal"] = 0
+        df.loc[df["SMA_Fast"] > df["SMA_Slow"], "Raw_Signal"] = 1
+        df.loc[df["SMA_Fast"] < df["SMA_Slow"], "Raw_Signal"] = -1
 
     elif strategy_type == "mean_reversion":
         # Simple mean reversion strategy
@@ -62,40 +54,39 @@ def apply_simple_strategy(
         # Calculate z-score
         df["ZScore"] = (df["close"] - df["SMA"]) / df["SD"]
 
-        # Generate signals
-        df["Signal"] = 0
-        df.loc[df["ZScore"] < -1.5, "Signal"] = (
+        # Generate raw signals
+        df["Raw_Signal"] = 0
+        df.loc[df["ZScore"] < -1.5, "Raw_Signal"] = (
             1  # Buy when price is significantly below mean
         )
-        df.loc[df["ZScore"] > 1.5, "Signal"] = (
+        df.loc[df["ZScore"] > 1.5, "Raw_Signal"] = (
             -1
         )  # Sell when price is significantly above mean
 
-        # Calculate position changes
-        df["Position"] = df["Signal"].shift(1)
-        df["Position"] = df["Position"].fillna(0)
-
     elif strategy_type == "dabak":
-        # Generate signals based on the dabak strategy rules
-        df["Signal"] = 0
-
-        # First, handle NaN values in the required columns
-        sell_columns = ["sell_tdst_level", "sell_setup_stop", "sell_countdown_stop"]
-        buy_columns = ["buy_tdst_level", "buy_setup_stop", "buy_countdown_stop"]
-
         # Check if required columns exist in the dataframe
-        for col in sell_columns + buy_columns:
+        required_columns = [
+            "sell_tdst_level",
+            "sell_setup_stop",
+            "sell_countdown_stop",
+            "buy_tdst_level",
+            "buy_setup_stop",
+            "buy_countdown_stop",
+        ]
+        for col in required_columns:
             if col not in df.columns:
                 raise ValueError(f"Required column '{col}' not found in dataframe")
 
-        # For sell threshold columns, we'll replace NaN with very low values
-        # so they don't artificially trigger buy conditions
+        # Create filled versions of threshold columns (using previous day's values)
+        # This prevents look-ahead bias when generating signals
+        for col in required_columns:
+            df[f"{col}_filled"] = df[col].shift(1).fillna(0)
 
-        for col in sell_columns + buy_columns:
-            df[f"{col}_filled"] = df[col].shift(1).fillna(0)  # Shift by 1, replace NaN with 0
+        # Generate raw signals for dabak strategy
+        df["Raw_Signal"] = 0
 
-        # BUY conditions: Close > sell_tdst_level AND Close > sell_setup_stop AND Close > sell
-        # Only trigger buy when close is above ALL sell thresholds
+        # BUY conditions: Close must be above ALL sell thresholds
+        # Only consider non-zero thresholds to avoid false positives
         buy_condition = (
             (df["close"] > df["buy_tdst_level_filled"])
             & (df["close"] > df["sell_setup_stop_filled"])
@@ -107,16 +98,14 @@ def apply_simple_strategy(
             )
         )
 
-        # SELL conditions: require breaking below ALL buy thresholds to trigger a sell
-        # This is more balanced than the original implementation
+        # SELL conditions: Any price point (open, high, low, close) breaking
+        # below ANY buy threshold will trigger a sell
         sell_condition_close = (
             (df["close"] < df["sell_tdst_level_filled"])
             | (df["close"] < df["buy_setup_stop_filled"])
             | (df["close"] < df["buy_countdown_stop_filled"])
         )
 
-        # We'll still check other price points, but with a more balanced approach
-        # Only trigger a sell if a price point breaks below ALL buy thresholds
         sell_condition_open = (
             (df["open"] < df["sell_tdst_level_filled"])
             | (df["open"] < df["buy_setup_stop_filled"])
@@ -135,7 +124,7 @@ def apply_simple_strategy(
             | (df["high"] < df["buy_countdown_stop_filled"])
         )
 
-        # Final sell condition - any price point breaking below ALL thresholds
+        # Final sell condition - any price point breaking below ANY threshold
         sell_condition = (
             sell_condition_open
             | sell_condition_low
@@ -143,24 +132,39 @@ def apply_simple_strategy(
             | sell_condition_close
         )
 
-        # Apply signals
-        df.loc[buy_condition, "Signal"] = 1
-        df.loc[sell_condition, "Signal"] = -1
+        # Apply raw signals - these are the daily buy/sell signals without position holding
+        df.loc[buy_condition, "Raw_Signal"] = 1
+        df.loc[sell_condition, "Raw_Signal"] = -1
 
         # If both buy and sell conditions are met, prioritize sell signal
-        df.loc[buy_condition & sell_condition, "Signal"] = -1
-
-        # Remove temporary columns
-        # for col in sell_columns + buy_columns:
-        #     df.drop(f"{col}_filled", axis=1, inplace=True)
-
-        # Calculate position changes
-        df["Position"] = df["Signal"].shift(1)
-        df["Position"] = df["Position"].fillna(0)
+        df.loc[buy_condition & sell_condition, "Raw_Signal"] = -1
 
     else:
         # Default to buy and hold
-        df["Position"] = 1
+        df["Raw_Signal"] = 1
+
+    # === NEW CODE: Implement position holding until opposite signal ===
+    # This applies to all strategy types
+
+    # Initialize columns for position tracking
+    df["Signal"] = 0  # Final signal after position holding logic
+    df["Position"] = 0  # Position based on signals (1 = long, -1 = short/flat)
+
+    # Loop through the dataframe to implement position holding
+    current_position = 0  # Start with no position
+
+    for i in range(len(df)):
+        raw_signal = df.iloc[i]["Raw_Signal"]
+
+        # Only change position when we get an opposite signal or when we have no position
+        if (raw_signal == 1 and current_position <= 0) or (
+            raw_signal == -1 and current_position >= 0
+        ):
+            current_position = raw_signal
+            df.iloc[i, df.columns.get_loc("Signal")] = raw_signal
+
+        # Update position for this row
+        df.iloc[i, df.columns.get_loc("Position")] = current_position
 
     # Calculate returns based on strategy
     df["Market_Return"] = df["close"].pct_change()  # Market returns
@@ -175,6 +179,9 @@ def apply_simple_strategy(
     # Calculate drawdowns
     df["Peak"] = df["Equity"].cummax()
     df["Drawdown"] = (df["Equity"] / df["Peak"] - 1) * 100
+
+    # Clean up temporary columns if needed
+    # df.drop([col for col in df.columns if col.endswith('_filled')], axis=1, inplace=True)
 
     return df
 
