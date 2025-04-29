@@ -151,14 +151,15 @@ def apply_simple_strategy(
     df["Position"] = 0  # Position based on signals (1 = long, -1 = short/flat)
 
     # Loop through the dataframe to implement position holding
-    current_position = 0  # Start with no position
+    # Starting with -1 position (flat/cash) as per requirement
+    current_position = -1  # Start with flat position (cash)
 
     for i in range(len(df)):
         raw_signal = df.iloc[i]["Raw_Signal"]
 
         # Only change position when we get an opposite signal or when we have no position
-        if (raw_signal == 1 and current_position <= 0) or (
-            raw_signal == -1 and current_position >= 0
+        if (raw_signal == 1 and current_position == -1) or (
+            raw_signal == -1 and current_position == 1
         ):
             current_position = raw_signal
             df.iloc[i, df.columns.get_loc("Signal")] = raw_signal
@@ -166,9 +167,15 @@ def apply_simple_strategy(
         # Update position for this row
         df.iloc[i, df.columns.get_loc("Position")] = current_position
 
-    # Calculate returns based on strategy
+    # Calculate market returns
     df["Market_Return"] = df["close"].pct_change()  # Market returns
-    df["Strategy_Return"] = df["Position"] * df["Market_Return"]  # Strategy returns
+
+    # Calculate strategy returns - when position is 1, apply market returns, when -1 (flat/cash), returns are 0
+    df["Strategy_Return"] = 0.0  # Initialize with zeros (cash position)
+    df.loc[df["Position"] == 1, "Strategy_Return"] = df.loc[
+        df["Position"] == 1, "Market_Return"
+    ]
+    # Note: When Position is -1, Strategy_Return remains 0 (cash position, no market exposure)
 
     # Calculate equity and P&L
     df["Equity"] = initial_capital * (1 + df["Strategy_Return"].cumsum())
@@ -184,6 +191,7 @@ def apply_simple_strategy(
     # df.drop([col for col in df.columns if col.endswith('_filled')], axis=1, inplace=True)
 
     return df
+
 
 
 def calculate_performance_metrics(df, initial_capital=None):
