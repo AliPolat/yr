@@ -375,8 +375,8 @@ def add_buy_setup_annotations(fig, plot_df, x, annotation_params, annotation_pos
                 opacity=0.9,
             )
 
-        # Highlight perfect buy setup 9s
-        if row["buy_setup"] == 9 and row.get("perfect_buy_9", 0) == 1:
+        # Add annotations for normal buy setup 9s
+        if row["buy_setup"] == 9 and row.get("perfect_buy_9", 0) != 1:
             fig.add_annotation(
                 x=idx,
                 y=row["high"] + signal_offset,
@@ -386,11 +386,29 @@ def add_buy_setup_annotations(fig, plot_df, x, annotation_params, annotation_pos
                 arrowsize=1,
                 arrowwidth=2,
                 arrowcolor="rgb(0,168,107)",
-                font=dict(color="white", size=12, family="Arial Black"),
-                bgcolor="rgba(0,168,107,0.5)",
-                borderpad=4,
+                font=dict(color="white", size=9, family="Arial"),  # Smaller font
+                bgcolor="rgba(0,168,107,0.4)",  # More transparent
+                borderpad=3,
                 borderwidth=0,
-                opacity=0.9,
+                opacity=0.7,  # More transparent
+            )
+            
+        # Highlight perfect buy setup 9s with "BUY M9" text
+        if row["buy_setup"] == 9 and row.get("perfect_buy_9", 0) == 1:
+            fig.add_annotation(
+                x=idx,
+                y=row["high"] + signal_offset,
+                text="BUY M9",  # Changed text format to BUY M9
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1,
+                arrowwidth=2,
+                arrowcolor="rgb(0,168,107)",
+                font=dict(color="white", size=9, family="Arial"),  # Smaller font
+                bgcolor="rgba(0,168,107,0.4)",  # More transparent
+                borderpad=3,
+                borderwidth=0,
+                opacity=0.7,  # More transparent
             )
 
 
@@ -420,8 +438,8 @@ def add_sell_setup_annotations(
                 opacity=0.9,
             )
 
-        # Highlight perfect sell setup 9s
-        if row["sell_setup"] == 9 and row.get("perfect_sell_9", 0) == 1:
+        # Add annotations for normal sell setup 9s
+        if row["sell_setup"] == 9 and row.get("perfect_sell_9", 0) != 1:
             fig.add_annotation(
                 x=idx,
                 y=row["high"] + signal_offset,
@@ -431,11 +449,29 @@ def add_sell_setup_annotations(
                 arrowsize=1,
                 arrowwidth=2,
                 arrowcolor="rgb(220,39,39)",
-                font=dict(color="white", size=12, family="Arial Black"),
-                bgcolor="rgba(220,39,39,0.5)",
-                borderpad=4,
+                font=dict(color="white", size=9, family="Arial"),  # Smaller font
+                bgcolor="rgba(220,39,39,0.4)",  # More transparent
+                borderpad=3,
                 borderwidth=0,
-                opacity=0.9,
+                opacity=0.7,  # More transparent
+            )
+            
+        # Highlight perfect sell setup 9s with "SELL M9" text
+        if row["sell_setup"] == 9 and row.get("perfect_sell_9", 0) == 1:
+            fig.add_annotation(
+                x=idx,
+                y=row["high"] + signal_offset,
+                text="SELL M9",  # Changed text format to SELL M9
+                showarrow=True,
+                arrowhead=2,
+                arrowsize=1,
+                arrowwidth=2,
+                arrowcolor="rgb(220,39,39)",
+                font=dict(color="white", size=9, family="Arial"),  # Smaller font
+                bgcolor="rgba(220,39,39,0.4)",  # More transparent
+                borderpad=3,
+                borderwidth=0,
+                opacity=0.7,  # More transparent
             )
 
 
@@ -477,8 +513,8 @@ def add_buy_countdown_annotations(
                 opacity=0.9,
             )
 
-            # Highlight perfect buy countdown 13s
-            if row["buy_countdown"] == 13 and row.get("perfect_buy_13", 0) == 1:
+            # Add annotations for normal buy countdown 13s
+            if row["buy_countdown"] == 13 and row.get("perfect_buy_13", 0) != 1:
                 fig.add_annotation(
                     x=idx,
                     y=row["low"] - signal_offset,
@@ -488,11 +524,29 @@ def add_buy_countdown_annotations(
                     arrowsize=1,
                     arrowwidth=2,
                     arrowcolor="rgb(0,168,107)",
-                    font=dict(color="white", size=12, family="Arial Black"),
-                    bgcolor="rgba(0,168,107,0.5)",
-                    borderpad=4,
+                    font=dict(color="white", size=9, family="Arial"),  # Smaller font
+                    bgcolor="rgba(0,168,107,0.4)",  # More transparent
+                    borderpad=3,
                     borderwidth=0,
-                    opacity=0.9,
+                    opacity=0.7,  # More transparent
+                )
+                
+            # Highlight perfect buy countdown 13s with "BUY M13" text
+            if row["buy_countdown"] == 13 and row.get("perfect_buy_13", 0) == 1:
+                fig.add_annotation(
+                    x=idx,
+                    y=row["low"] - signal_offset,
+                    text="BUY M13",  # Changed text format to BUY M13
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1,
+                    arrowwidth=2,
+                    arrowcolor="rgb(0,168,107)",
+                    font=dict(color="white", size=9, family="Arial"),  # Smaller font
+                    bgcolor="rgba(0,168,107,0.4)",  # More transparent
+                    borderpad=3,
+                    borderwidth=0,
+                    opacity=0.7,  # More transparent
                 )
 
         # Update the last countdown number
@@ -527,8 +581,8 @@ def add_sell_countdown_annotations(
                 opacity=0.9,
             )
 
-            # Highlight perfect sell countdown 13s
-            if row["sell_countdown"] == 13 and row.get("perfect_sell_13", 0) == 1:
+            # Add annotations for normal sell countdown 13s
+            if row["sell_countdown"] == 13 and row.get("perfect_sell_13", 0) != 1:
                 fig.add_annotation(
                     x=idx,
                     y=row["low"] - signal_offset,
@@ -538,11 +592,29 @@ def add_sell_countdown_annotations(
                     arrowsize=1,
                     arrowwidth=2,
                     arrowcolor="rgb(220,39,39)",
-                    font=dict(color="white", size=12, family="Arial Black"),
-                    bgcolor="rgba(220,39,39,0.5)",
-                    borderpad=4,
+                    font=dict(color="white", size=9, family="Arial"),  # Smaller font
+                    bgcolor="rgba(220,39,39,0.4)",  # More transparent
+                    borderpad=3,
                     borderwidth=0,
-                    opacity=0.9,
+                    opacity=0.7,  # More transparent
+                )
+                
+            # Highlight perfect sell countdown 13s with "SELL M13" text
+            if row["sell_countdown"] == 13 and row.get("perfect_sell_13", 0) == 1:
+                fig.add_annotation(
+                    x=idx,
+                    y=row["low"] - signal_offset,
+                    text="SELL M13",  # Changed text format to SELL M13
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1,
+                    arrowwidth=2,
+                    arrowcolor="rgb(220,39,39)",
+                    font=dict(color="white", size=9, family="Arial"),  # Smaller font
+                    bgcolor="rgba(220,39,39,0.4)",  # More transparent
+                    borderpad=3,
+                    borderwidth=0,
+                    opacity=0.7,  # More transparent
                 )
 
         # Update the last countdown number
