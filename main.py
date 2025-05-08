@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 import streamlit as st
 import yfinance as yf
+import json
+import os
 
 from calculate_tds import calculate_tdsequential
 from plot_tds import plot_tdsequential
@@ -9,6 +11,18 @@ from calculate_eqcrv import (
     apply_simple_strategy,
     create_performance_plots,
 )
+
+
+def load_translations(lang):
+    """Load translations from JSON file based on selected language"""
+    try:
+        file_path = os.path.join("translations", f"{lang}.json")
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        st.error(f"Error loading translations: {e}")
+        # Return empty dict as fallback
+        return {}
 
 
 def get_stock_data(ticker, start_date, end_date, interval):
@@ -23,19 +37,44 @@ def get_stock_data(ticker, start_date, end_date, interval):
         return None
 
 
+# Initialize session state for language if it doesn't exist
+if "language" not in st.session_state:
+    st.session_state.language = "en"  # default language is English
+
+# Create language selector in the sidebar (before any other UI elements)
+langs = {"en": "English", "tr": "Türkçe"}
+
+# Add language selection to the very top of the sidebar
+selected_lang = st.sidebar.selectbox(
+    "Language / Dil",
+    options=list(langs.keys()),
+    format_func=lambda x: langs[x],
+    index=list(langs.keys()).index(st.session_state.language),
+)
+
+# Update session state if language changed
+if selected_lang != st.session_state.language:
+    st.session_state.language = selected_lang
+    # This will trigger a rerun with the new language
+
+# Load translations for the selected language
+t = load_translations(st.session_state.language)
+
 # Set the page title
-st.title("TD Sequential Indicator")
+st.title(t.get("app_title", "TD Sequential Indicator"))
 
 # Sidebar for stock selection
-st.sidebar.header("Settings")
+st.sidebar.header(t.get("settings", "Settings"))
 stock_options = ["AAPL", "GOLD", "BITCOIN", "Other"]
-selected_stock_option = st.sidebar.selectbox("Select Stock/Asset", stock_options)
+selected_stock_option = st.sidebar.selectbox(
+    t.get("select_stock", "Select Stock/Asset"), stock_options
+)
 
 # If "Other" is selected, let the user input a custom stock symbol
 if selected_stock_option == "BITCOIN":
     ticker = "BTC-USD"
 elif selected_stock_option == "Other":
-    ticker = st.sidebar.text_input("Enter Stock Symbol", "MSFT")
+    ticker = st.sidebar.text_input(t.get("enter_stock", "Enter Stock Symbol"), "MSFT")
 else:
     ticker = selected_stock_option
 
@@ -49,12 +88,14 @@ period_options = [
     "1 year",
     "Other",
 ]
-selected_period = st.sidebar.selectbox("Select Time Period", period_options)
+selected_period = st.sidebar.selectbox(
+    t.get("select_period", "Select Time Period"), period_options
+)
 
 # If "Other" is selected, let the user input a custom period
 if selected_period == "Other":
     custom_period_days = st.sidebar.number_input(
-        "Enter Number of Days", min_value=1, value=30
+        t.get("enter_days", "Enter Number of Days"), min_value=1, value=30
     )
     end_date = datetime.now()
     start_date = end_date - timedelta(days=custom_period_days)
@@ -82,61 +123,81 @@ interval_names = {
     "1mo": "1 Month",
 }
 selected_interval = st.sidebar.selectbox(
-    "Select Interval", interval_options, format_func=lambda x: interval_names[x]
+    t.get("select_interval", "Select Interval"),
+    interval_options,
+    format_func=lambda x: interval_names[x],
 )
 
 # Add note about intraday data limitations
 if selected_interval in ["5m", "15m", "1h", "4h"]:
     st.sidebar.info(
-        "Note: Intraday data (minutes/hours) is typically only available for the last 60 days. "
-        "For longer periods, please use daily intervals or higher."
+        t.get(
+            "intraday_note",
+            "Note: Intraday data (minutes/hours) is typically only available for the last 60 days. For longer periods, please use daily intervals or higher.",
+        )
     )
 
 # Add checkboxes for display options
-display_options = st.sidebar.expander("Display Options", expanded=False)
+display_options = st.sidebar.expander(
+    t.get("display_options", "Display Options"), expanded=False
+)
 show_support_resistance = display_options.checkbox(
-    "Display Support/Resistance",
+    t.get("show_support_resistance", "Display Support/Resistance"),
     value=True,
-    help="Show support and resistance levels on the chart",
+    help=t.get(
+        "show_support_resistance_help",
+        "Show support and resistance levels on the chart",
+    ),
 )
 show_setup_stop_loss = display_options.checkbox(
-    "Display Setup Stop Loss",
+    t.get("show_setup_stop_loss", "Display Setup Stop Loss"),
     value=True,
-    help="Show stop loss levels for TD Sequential setups",
+    help=t.get(
+        "show_setup_stop_loss_help", "Show stop loss levels for TD Sequential setups"
+    ),
 )
 show_countdown_stop_loss = display_options.checkbox(
-    "Display Countdown Stop Loss",
+    t.get("show_countdown_stop_loss", "Display Countdown Stop Loss"),
     value=True,
-    help="Show stop loss levels for TD Sequential countdowns",
+    help=t.get(
+        "show_countdown_stop_loss_help",
+        "Show stop loss levels for TD Sequential countdowns",
+    ),
 )
 
 # Strategy settings
-strategy_options = st.sidebar.expander("Strategy Options", expanded=False)
+strategy_options = st.sidebar.expander(
+    t.get("strategy_options", "Strategy Options"), expanded=False
+)
 initial_capital = strategy_options.number_input(
-    "Initial Capital", value=100000, step=10000
+    t.get("initial_capital", "Initial Capital"), value=100000, step=10000
 )
 strategy_types = ["dabak", "sma_crossover", "mean_reversion", "other"]
-strategy_type = strategy_options.selectbox("Strategy Type", strategy_types)
+strategy_type = strategy_options.selectbox(
+    t.get("strategy_type", "Strategy Type"), strategy_types
+)
 
 # If "other" is selected, let the user input a custom strategy name
 if strategy_type == "other":
     custom_strategy = strategy_options.text_input(
-        "Enter Custom Strategy Name", "custom_strategy"
+        t.get("custom_strategy", "Enter Custom Strategy Name"), "custom_strategy"
     )
     strategy_type = custom_strategy
 
 # Display Analysis button (renamed from Download Data)
-if st.sidebar.button("Display Analysis"):
+if st.sidebar.button(t.get("display_analysis", "Display Analysis")):
     # Load data
     data = get_stock_data(ticker, start_date, end_date, selected_interval)
 
     # Display data information
     if data is not None and not data.empty:
-        st.header(f"{ticker} Analysis")
+        st.header(f"{ticker} {t.get('analysis', 'Analysis')}")
         st.write(
-            f"Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
+            f"{t.get('period', 'Period')}: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}"
         )
-        st.write(f"Interval: {interval_names[selected_interval]}")
+        st.write(
+            f"{t.get('interval', 'Interval')}: {interval_names[selected_interval]}"
+        )
 
         # Apply TD Sequential calculation
         td_data = calculate_tdsequential(data, stock_name=ticker)
@@ -171,7 +232,12 @@ if st.sidebar.button("Display Analysis"):
 
         # Create tabs for different views
         tab1, tab2, tab3, tab4 = st.tabs(
-            ["TD Sequential Chart", "Data Table", "Equity Curve", "Performance Metrics"]
+            [
+                t.get("tab_chart", "TD Sequential Chart"),
+                t.get("tab_data", "Data Table"),
+                t.get("tab_equity", "Equity Curve"),
+                t.get("tab_metrics", "Performance Metrics"),
+            ]
         )
 
         with tab1:

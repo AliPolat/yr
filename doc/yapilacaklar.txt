@@ -1,0 +1,21 @@
+08.05.2025 Yapılacaklar
+========================
+- kişi bilgilerini oku ve sakla
+	Takma adı
+	
+- birden fazla kişi tanımı yapmaya izin ver
+
+- her kişiye ait takip edilecek hisse adları tanımı yap ve ekle
+	Hisse adı 
+	Alış Tarihi
+	Alış Fiyatı
+	Satış Tarihi
+	Satış Fiyatı
+	
+- kişisel analiz sayfası tanimla
+	Tanımlanan hisse senetlerine ait bilgileri çek, analizleri yap ve tavsiyeleri göster
+	
+
+- Veritabanı için sqllite kullan
+- Orm için
+- Çokludil desteği için json kullan

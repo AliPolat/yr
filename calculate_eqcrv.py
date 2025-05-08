@@ -35,35 +35,7 @@ def apply_simple_strategy(
     df = data.copy()
 
     # Apply strategy based on type
-    if strategy_type == "sma_crossover":
-        # Calculate simple moving averages
-        df["SMA_Fast"] = df["close"].rolling(window=fast_period).mean()
-        df["SMA_Slow"] = df["close"].rolling(window=slow_period).mean()
-
-        # Generate raw signals (1 = buy, -1 = sell, 0 = hold)
-        df["Raw_Signal"] = 0
-        df.loc[df["SMA_Fast"] > df["SMA_Slow"], "Raw_Signal"] = 1
-        df.loc[df["SMA_Fast"] < df["SMA_Slow"], "Raw_Signal"] = -1
-
-    elif strategy_type == "mean_reversion":
-        # Simple mean reversion strategy
-        lookback = fast_period
-        df["SMA"] = df["close"].rolling(window=lookback).mean()
-        df["SD"] = df["close"].rolling(window=lookback).std()
-
-        # Calculate z-score
-        df["ZScore"] = (df["close"] - df["SMA"]) / df["SD"]
-
-        # Generate raw signals
-        df["Raw_Signal"] = 0
-        df.loc[df["ZScore"] < -1.5, "Raw_Signal"] = (
-            1  # Buy when price is significantly below mean
-        )
-        df.loc[df["ZScore"] > 1.5, "Raw_Signal"] = (
-            -1
-        )  # Sell when price is significantly above mean
-
-    elif strategy_type == "dabak":
+    if strategy_type == "dabak":
         # Check if required columns exist in the dataframe
         required_columns = [
             "sell_tdst_level",
