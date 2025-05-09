@@ -2,11 +2,13 @@
 ========================
 - kişi bilgilerini oku ve sakla
 	Takma adı
+	Adı soyadı
+	Açıklama
 	
 - birden fazla kişi tanımı yapmaya izin ver
 
 - her kişiye ait takip edilecek hisse adları tanımı yap ve ekle
-	Hisse adı 
+	Hisse Varlık adı 
 	Alış Tarihi
 	Alış Fiyatı
 	Satış Tarihi
@@ -17,5 +19,35 @@
 	
 
 - Veritabanı için sqllite kullan
-- Orm için
+- Orm için peewee orm kullan
 - Çokludil desteği için json kullan
+
+prompt:
+
+at the program start (main.py), by using peewee orm, create following database and tables with the given properties:
+
+database : yatmaz_robot.db
+
+tables:
+1-) user
+fields: user_id :IntegerField
+		nick_name:CharField
+		real_name:CharField
+		comment:CharField
+
+2-) stock_asset
+fields:
+		stock_asset_id:IntegerField
+		user_id : ForeignField(user)
+		stok_asset_code:CharField
+		stok_asset_name:CharField
+		Buy_date:dateField
+		Buy_price:MoneyField
+		Sell_date:dateField
+		Sell_Price:MoneyField
+		Status: charField : Position or Cash
+
+
+also in a  seperate streamlite page add logic and widgets to add,delete, modify these tables.
+
+modify program such that any of the features added do not break the current funcionality and multilinguility. also place the database and table creation and modification code in a seperate file (models.py). Update the tr.json and en.json files.
