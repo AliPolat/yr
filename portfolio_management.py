@@ -18,9 +18,9 @@ def load_translations(lang):
         return {}
 
 
-def display_database_management(t):
+def display_portfolio_management(t):
     """Display the database management UI based on selected language"""
-    st.title(t.get("db_management_title", "Database Management"))
+    st.title(t.get("portfolio_management_title", "Portfolio Management"))
 
     # Create tab for each table
     tab_user, tab_stock = st.tabs(

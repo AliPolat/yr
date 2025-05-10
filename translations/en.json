@@ -30,6 +30,10 @@
     "td_sequential_indicator": "TD Sequential Indicator",
     "database_management": "Database Management",
     "db_management_title": "Database Management",
+    
+    "portfolio_management": "Portfolio Management",
+    "portfolio_management_title": "Portfolio Management",
+    
     "tab_user_management": "User Management",
     "tab_stock_management": "Stock/Asset Management",
     "user_management": "User Management",

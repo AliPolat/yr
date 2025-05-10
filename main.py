@@ -12,7 +12,7 @@ from calculate_eqcrv import (
     create_performance_plots,
 )
 from models import create_tables
-from database_management import display_database_management
+from portfolio_management import display_portfolio_management
 
 
 def load_translations(lang):
@@ -66,15 +66,15 @@ if selected_lang != st.session_state.language:
 t = load_translations(st.session_state.language)
 
 # Create navigation
-page_options = ["TD Sequential Indicator", "Database Management"]
+page_options = ["TD Sequential Indicator", "Portfolio Management"]
 selected_page = st.sidebar.radio(
     t.get("navigation", "Navigation"),
     options=page_options,
     format_func=lambda x: t.get(x.lower().replace(" ", "_"), x),
 )
 
-if selected_page == "Database Management":
-    display_database_management(t)
+if selected_page == "Portfolio Management":
+    display_portfolio_management(t)
 else:
     # Set the page title
     st.title(t.get("app_title", "TD Sequential Indicator"))
