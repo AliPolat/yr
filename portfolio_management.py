@@ -75,7 +75,7 @@ def display_user_management(t):
                         nick_name=nick_name, real_name=real_name, comment=comment
                     )
                     st.success(t.get("user_added", "User added successfully!"))
-                    # st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error(
                         t.get("required_fields", "Nickname and Real Name are required!")
@@ -128,7 +128,7 @@ def display_user_management(t):
                         selected_user.comment = e_comment
                         selected_user.save()
                         st.success(t.get("user_updated", "User updated successfully!"))
-                        # st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error(
                             t.get(
@@ -154,7 +154,7 @@ def display_user_management(t):
                     else:
                         selected_user.delete_instance()
                         st.success(t.get("user_deleted", "User deleted successfully!"))
-                        # st.experimental_rerun()
+                        st.rerun()
         else:
             st.info(t.get("no_users_edit", "No users available to edit."))
 
@@ -262,7 +262,7 @@ def display_stock_management(t):
                     )
 
                     st.success(t.get("asset_added", "Asset added successfully!"))
-                    # st.experimental_rerun()
+                    st.rerun()
                 else:
                     st.error(
                         t.get(
@@ -373,7 +373,7 @@ def display_stock_management(t):
                         st.success(
                             t.get("asset_updated", "Asset updated successfully!")
                         )
-                        # st.experimental_rerun()
+                        st.rerun()
                     else:
                         st.error(
                             t.get(
@@ -385,4 +385,4 @@ def display_stock_management(t):
                 if delete_button:
                     selected_asset.delete_instance()
                     st.success(t.get("asset_deleted", "Asset deleted successfully!"))
-                    # st.experimental_rerun()
+                    st.rerun()
