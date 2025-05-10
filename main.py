@@ -44,7 +44,7 @@ create_tables()
 
 # Initialize session state for language if it doesn't exist
 if "language" not in st.session_state:
-    st.session_state.language = "en"  # default language is English
+    st.session_state.language = "tr"  # default language is Turkish
 
 # Create language selector in the sidebar (before any other UI elements)
 langs = {"en": "English", "tr": "Türkçe"}
