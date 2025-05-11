@@ -191,22 +191,14 @@ else:
     initial_capital = strategy_options.number_input(
         t.get("initial_capital", "Initial Capital"), value=100000, step=10000
     )
-    strategy_types = ["dabak", "sma_crossover", "mean_reversion", "other"]
-    strategy_type = strategy_options.selectbox(
-        t.get("strategy_type", "Strategy Type"), strategy_types
-    )
-
-    # If "other" is selected, let the user input a custom strategy name
-    if strategy_type == "other":
-        custom_strategy = strategy_options.text_input(
-            t.get("custom_strategy", "Enter Custom Strategy Name"), "custom_strategy"
-        )
-        strategy_type = custom_strategy
-
+    
     # Display Analysis button (renamed from Download Data)
     if st.sidebar.button(t.get("display_analysis", "Display Analysis")):
         # Load data
         data = get_stock_data(ticker, start_date, end_date, selected_interval)
+
+        instant_info = yf.Ticker(ticker)
+        info = instant_info.info 
 
         # Display data information
         if data is not None and not data.empty:
@@ -222,6 +214,7 @@ else:
             td_data = calculate_tdsequential(data, stock_name=ticker)
 
             # Apply strategy
+            strategy_type = "dabak"  # Could make configurable
             df_strategy = apply_simple_strategy(
                 td_data,
                 initial_capital=initial_capital,
@@ -236,7 +229,7 @@ else:
             )
 
             # Create visualizations
-            title = f"{ticker} Trading Performance: {strategy_type.replace('_', ' ').title()} Strategy"
+            title = f"{ticker} Trading Performance:"
             equity_fig, metrics_fig = create_performance_plots(
                 df_strategy, metrics, title
             )
@@ -265,6 +258,7 @@ else:
                 st.plotly_chart(td_fig, use_container_width=True)
 
             with tab2:
+                st.write("Current Price:", info.get('currentPrice', 'N/A'))
                 st.dataframe(df_strategy, use_container_width=True)
 
             with tab3:
