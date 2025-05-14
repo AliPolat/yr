@@ -51,3 +51,7 @@ fields:
 also in a  seperate streamlite page add logic and widgets to add,delete, modify these tables.
 
 modify program such that any of the features added do not break the current funcionality and multilinguility. also place the database and table creation and modification code in a seperate file (models.py). Update the tr.json and en.json files.
+
+prompt :
+Modify the attached graph plot program so that it does not break current functionality and adjusts the x-axis scale and legends so that it scales automatically when the data is date-indexed or datetime-indexed. Hide non-operational hours and minutes from the graph, and hide weekends and holidays from the graph
+

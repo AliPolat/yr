@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+from datetime import datetime, time
 
 
 def plot_tdsequential(
@@ -11,6 +12,11 @@ def plot_tdsequential(
     show_support_resistance=True,
     show_setup_stop_loss=True,
     show_countdown_stop_loss=True,
+    trading_hours=(time(9, 30), time(16, 0)),  # Default NYSE trading hours
+    hide_non_trading_hours=True,
+    hide_weekends=True,
+    hide_holidays=True,
+    holidays=None,  # List of holiday dates as strings 'YYYY-MM-DD' or datetime objects
 ):
     """
     Plot TD Sequential indicators on a candlestick chart with TDST levels and improved readability.
@@ -31,6 +37,16 @@ def plot_tdsequential(
         Whether to show setup stop loss levels, default is True
     show_countdown_stop_loss : bool, optional
         Whether to show countdown stop loss levels, default is True
+    trading_hours : tuple of datetime.time, optional
+        Tuple of (start_time, end_time) for trading hours, default is (9:30, 16:00) for NYSE
+    hide_non_trading_hours : bool, optional
+        Whether to hide non-trading hours, default is True (only applies to datetime-indexed data)
+    hide_weekends : bool, optional
+        Whether to hide weekends, default is True
+    hide_holidays : bool, optional
+        Whether to hide holidays, default is True
+    holidays : list, optional
+        List of holiday dates as strings 'YYYY-MM-DD' or datetime objects
 
     Returns:
     --------
@@ -43,8 +59,8 @@ def plot_tdsequential(
     else:
         plot_df = df.copy()
 
-    # Get date column or index for x-axis
-    x = get_x_axis_values(plot_df)
+    # Get date column or index for x-axis and determine data type
+    x, index_type = get_x_axis_values(plot_df)
 
     # Create a single subplot with more vertical space
     fig = make_subplots(rows=1, cols=1, vertical_spacing=0.02)
@@ -66,7 +82,7 @@ def plot_tdsequential(
     # Add Buy Setup Stop levels and Sell Setup Stop levels as discontinuous lines (if enabled)
     if show_setup_stop_loss:
         add_setup_stop_levels(fig, plot_df, x)
-        
+
     # Add Buy Countdown Stop levels and Sell Countdown Stop levels as discontinuous lines (if enabled)
     if show_countdown_stop_loss:
         add_countdown_stop_levels(fig, plot_df, x)
@@ -78,20 +94,57 @@ def plot_tdsequential(
     add_countdown_annotations(fig, plot_df, x, annotation_params, annotation_positions)
 
     # Create a legend and add title
-    add_legend(fig, show_support_resistance, show_setup_stop_loss, show_countdown_stop_loss)
-    update_layout(fig, stock_name)
+    add_legend(
+        fig, show_support_resistance, show_setup_stop_loss, show_countdown_stop_loss
+    )
+
+    # Update layout with proper x-axis formatting based on index type
+    update_layout(
+        fig,
+        stock_name,
+        index_type=index_type,
+        trading_hours=trading_hours,
+        hide_non_trading_hours=hide_non_trading_hours,
+        hide_weekends=hide_weekends,
+        hide_holidays=hide_holidays,
+        holidays=holidays,
+    )
 
     return fig
 
 
 def get_x_axis_values(plot_df):
-    """Extract the x-axis values from the dataframe"""
+    """
+    Extract the x-axis values from the dataframe and determine the index type
+
+    Returns:
+    --------
+    tuple: (x_values, index_type)
+        x_values: array-like values for the x-axis
+        index_type: string indicating the type ('datetime', 'date', or 'numeric')
+    """
     if isinstance(plot_df.index, pd.DatetimeIndex):
-        return plot_df.index
+        # Check if all times are midnight (indicating date-only data)
+        has_time_component = any(
+            idx.time() != time(0, 0) for idx in plot_df.index if not pd.isna(idx)
+        )
+        if has_time_component:
+            return plot_df.index, "datetime"
+        else:
+            return plot_df.index, "date"
     elif "date" in plot_df.columns:
-        return plot_df["date"]
+        if pd.api.types.is_datetime64_any_dtype(plot_df["date"]):
+            # Check if all times are midnight (indicating date-only data)
+            has_time_component = any(
+                idx.time() != time(0, 0) for idx in plot_df["date"] if not pd.isna(idx)
+            )
+            if has_time_component:
+                return plot_df["date"], "datetime"
+            else:
+                return plot_df["date"], "date"
+        return plot_df["date"], "date"
     else:
-        return np.arange(len(plot_df))
+        return np.arange(len(plot_df)), "numeric"
 
 
 def add_candlestick_chart(fig, x, plot_df):
@@ -345,6 +398,7 @@ def add_discontinuous_levels(
             )
         )
 
+
 def add_setup_annotations(fig, plot_df, x, annotation_params, annotation_positions):
     """Add Buy and Sell Setup annotations above candlesticks"""
     add_buy_setup_annotations(fig, plot_df, x, annotation_params, annotation_positions)
@@ -392,7 +446,7 @@ def add_buy_setup_annotations(fig, plot_df, x, annotation_params, annotation_pos
                 borderwidth=0,
                 opacity=0.7,  # More transparent
             )
-            
+
         # Highlight perfect buy setup 9s with "BUY M9" text
         if row["buy_setup"] == 9 and row.get("perfect_buy_9", 0) == 1:
             fig.add_annotation(
@@ -455,7 +509,7 @@ def add_sell_setup_annotations(
                 borderwidth=0,
                 opacity=0.7,  # More transparent
             )
-            
+
         # Highlight perfect sell setup 9s with "SELL M9" text
         if row["sell_setup"] == 9 and row.get("perfect_sell_9", 0) == 1:
             fig.add_annotation(
@@ -530,7 +584,7 @@ def add_buy_countdown_annotations(
                     borderwidth=0,
                     opacity=0.7,  # More transparent
                 )
-                
+
             # Highlight perfect buy countdown 13s with "BUY M13" text
             if row["buy_countdown"] == 13 and row.get("perfect_buy_13", 0) == 1:
                 fig.add_annotation(
@@ -598,7 +652,7 @@ def add_sell_countdown_annotations(
                     borderwidth=0,
                     opacity=0.7,  # More transparent
                 )
-                
+
             # Highlight perfect sell countdown 13s with "SELL M13" text
             if row["sell_countdown"] == 13 and row.get("perfect_sell_13", 0) == 1:
                 fig.add_annotation(
@@ -623,7 +677,9 @@ def add_sell_countdown_annotations(
         )
 
 
-def add_legend(fig, show_support_resistance, show_setup_stop_loss, show_countdown_stop_loss):
+def add_legend(
+    fig, show_support_resistance, show_setup_stop_loss, show_countdown_stop_loss
+):
     """Add a legend to the figure"""
     # Create a clearer legend using shapes and annotations
     fig.add_shape(
@@ -660,7 +716,12 @@ def add_legend(fig, show_support_resistance, show_setup_stop_loss, show_countdow
     if show_setup_stop_loss:
         legend_texts.extend(
             [
-                ("BUY SETUP STOP (Support)", "rgba(128,0,128,0.7)", 0.025, 0.055),  # Purple
+                (
+                    "BUY SETUP STOP (Support)",
+                    "rgba(128,0,128,0.7)",
+                    0.025,
+                    0.055,
+                ),  # Purple
                 (
                     "SELL SETUP STOP (Resistance)",
                     "rgba(255,165,0,0.7)",
@@ -669,12 +730,17 @@ def add_legend(fig, show_support_resistance, show_setup_stop_loss, show_countdow
                 ),  # Orange
             ]
         )
-        
+
     # Only add countdown stop levels to legend if enabled
     if show_countdown_stop_loss:
         legend_texts.extend(
             [
-                ("BUY COUNTDOWN STOP (Support)", "rgba(0,0,255,0.7)", 0.025, 0.015),  # Blue
+                (
+                    "BUY COUNTDOWN STOP (Support)",
+                    "rgba(0,0,255,0.7)",
+                    0.025,
+                    0.015,
+                ),  # Blue
                 (
                     "SELL COUNTDOWN STOP (Resistance)",
                     "rgba(0,0,255,0.7)",
@@ -698,8 +764,78 @@ def add_legend(fig, show_support_resistance, show_setup_stop_loss, show_countdow
         )
 
 
-def update_layout(fig, stock_name):
-    """Update the figure layout with dark theme styling"""
+def is_holiday(date, holidays):
+    """Check if a given date is a holiday"""
+    if holidays is None:
+        return False
+
+    # Convert date to string format for comparison if it's a datetime
+    if isinstance(date, (pd.Timestamp, datetime)):
+        date_str = date.strftime("%Y-%m-%d")
+    else:
+        date_str = date
+
+    # Convert all holidays to string format if they aren't already
+    holiday_strs = []
+    for holiday in holidays:
+        if isinstance(holiday, (pd.Timestamp, datetime)):
+            holiday_strs.append(holiday.strftime("%Y-%m-%d"))
+        else:
+            holiday_strs.append(holiday)
+
+    return date_str in holiday_strs
+
+
+def is_weekend(date):
+    """Check if a given date is a weekend (Saturday or Sunday)"""
+    if isinstance(date, (pd.Timestamp, datetime)):
+        return date.weekday() >= 5  # 5 = Saturday, 6 = Sunday
+    return False
+
+
+def is_trading_time(timestamp, trading_hours):
+    """Check if a given timestamp is within trading hours"""
+    if not isinstance(timestamp, (pd.Timestamp, datetime)):
+        return True
+
+    start_time, end_time = trading_hours
+    timestamp_time = timestamp.time()
+
+    return start_time <= timestamp_time <= end_time
+
+
+def update_layout(
+    fig,
+    stock_name,
+    index_type="numeric",
+    trading_hours=(time(9, 30), time(16, 0)),
+    hide_non_trading_hours=True,
+    hide_weekends=True,
+    hide_holidays=True,
+    holidays=None,
+):
+    """
+    Update the figure layout with dark theme styling and appropriate x-axis formatting
+
+    Parameters:
+    -----------
+    fig : plotly.graph_objects.Figure
+        Figure to update
+    stock_name : str, optional
+        Name of the stock for the chart title
+    index_type : str, optional
+        Type of index ('datetime', 'date', or 'numeric')
+    trading_hours : tuple of datetime.time, optional
+        Tuple of (start_time, end_time) for trading hours
+    hide_non_trading_hours : bool, optional
+        Whether to hide non-trading hours
+    hide_weekends : bool, optional
+        Whether to hide weekends
+    hide_holidays : bool, optional
+        Whether to hide holidays
+    holidays : list, optional
+        List of holiday dates
+    """
     title = f"TD Sequential Analysis{' - ' + stock_name if stock_name else ''}"
     fig.update_layout(
         title=dict(text=title, font=dict(size=24, family="Arial", color="#FFFFFF")),
@@ -715,15 +851,75 @@ def update_layout(fig, stock_name):
         font=dict(family="Arial", color="#FFFFFF"),  # Light text for dark background
     )
 
-    # Customize axes for better readability in dark theme
-    fig.update_xaxes(
-        showgrid=True,
-        gridwidth=0.5,
-        gridcolor="rgba(80,80,80,0.5)",
-        zeroline=False,
-        title_font=dict(color="#FFFFFF"),
-        tickfont=dict(color="#FFFFFF"),
-    )
+    # Configure x-axis based on index type
+    x_axis_config = {
+        "showgrid": True,
+        "gridwidth": 0.5,
+        "gridcolor": "rgba(80,80,80,0.5)",
+        "zeroline": False,
+        "title_font": dict(color="#FFFFFF"),
+        "tickfont": dict(color="#FFFFFF"),
+    }
+
+    # Add specific configurations for datetime or date indices
+    if index_type == "datetime":
+        # For datetime data, show date and time
+        x_axis_config.update(
+            {
+                "title": "Date & Time",
+                "tickformat": "%Y-%m-%d %H:%M",
+                "type": "date",
+                "rangeslider": dict(visible=False),
+            }
+        )
+
+        # Configure rangebreaks to hide non-trading hours, weekends, and holidays
+        rangebreaks = []
+
+        # Hide non-trading hours if requested
+        if hide_non_trading_hours:
+            start_time, end_time = trading_hours
+            rangebreaks.append(
+                dict(
+                    bounds=[end_time.strftime("%H:%M"), start_time.strftime("%H:%M")],
+                    pattern="hour",
+                )
+            )
+
+        # Hide weekends if requested
+        if hide_weekends:
+            rangebreaks.append(dict(bounds=["sat", "mon"], pattern="day of week"))
+
+        # Add rangebreaks to x-axis config if there are any
+        if rangebreaks:
+            x_axis_config["rangebreaks"] = rangebreaks
+
+    elif index_type == "date":
+        # For date-only data, show just the date
+        x_axis_config.update(
+            {
+                "title": "Date",
+                "tickformat": "%Y-%m-%d",
+                "type": "date",
+                "rangeslider": dict(visible=False),
+            }
+        )
+
+        # Configure rangebreaks to hide weekends and holidays
+        rangebreaks = []
+
+        # Hide weekends if requested
+        if hide_weekends:
+            rangebreaks.append(dict(bounds=["sat", "mon"], pattern="day of week"))
+
+        # Add rangebreaks to x-axis config if there are any
+        if rangebreaks:
+            x_axis_config["rangebreaks"] = rangebreaks
+    else:
+        # For numeric data, leave as is
+        x_axis_config["title"] = "Bar Number"
+
+    fig.update_xaxes(**x_axis_config)
 
     fig.update_yaxes(
         title="Price",
